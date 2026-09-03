@@ -30,6 +30,10 @@ lib/
   map/                      # 지도 공급자와 경로 렌더링
 ```
 
+상태 관리 기본 선택은 Riverpod `Notifier`다. 화면은 provider를 구독하고 사용자 명령을
+notifier에 전달하며, GPS·DB·파일 API를 직접 호출하지 않는다. 기능별 상태는 해당 기능
+provider로 분리하고 도메인 모델은 Flutter 위젯과 Riverpod에 의존하지 않는다.
+
 ## 계층 규칙
 
 - 화면 계층은 GPS 플러그인이나 파일/DB API를 직접 호출하지 않는다.

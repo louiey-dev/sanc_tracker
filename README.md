@@ -31,3 +31,10 @@ PC 조회는 모바일 MVP 이후 단계이며 자체 서버는 향후 선택 �
 ## Repository
 
 Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
+
+---
+
+## History
+
+- 2026.09.03
+  - kakao map displayed
