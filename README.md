@@ -28,3 +28,6 @@ PC 조회는 모바일 MVP 이후 단계이며 자체 서버는 향후 선택 �
 - [백업·복원 계약](./.agents/doc/project-structure.md)
 - [향후 자체 서버 API 참고](./.agents/doc/api-contract.md)
 
+## Repository
+
+Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
