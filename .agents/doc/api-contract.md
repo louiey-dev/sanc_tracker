@@ -4,6 +4,9 @@
 실시간 공유 또는 자체 다중 기기 동기화가 필요할 때만 사용할 선택적 서버 설계이며,
 현재 활성 TODO의 구현 대상은 아니다.
 
+현재 Google Drive 기능은 [백업 계약](./project-structure.md)을 따른다.
+이 문서의 서버용 ID·행별 동기화·삭제 규칙은 로컬 스냅샷 백업에 적용하지 않는다.
+
 모든 API는 HTTPS를 사용한다. 인증은 `Authorization: Bearer <token>` 형식으로
 전달하며, 서버는 토큰의 사용자 소유 데이터만 반환한다.
 
@@ -127,29 +130,6 @@
 - 앱 전용 JSON은 전체 백업 포맷이며 `formatVersion`을 필수로 포함한다.
 - GeoJSON/GPX는 경로와 좌표 마커 호환용이며, 미디어 원본과 앱 전용 메모는 포함하지 않는다.
 - 미디어 원본을 포함하는 Export는 압축 파일로 생성하며, 포함 여부를 사용자가 선택한다.
-
-## Google Drive 백업 계약
-
-Google Drive 자동 백업은 서버 API가 아닌 클라이언트 측 동기화로 수행한다. 기본 대상은
-`appDataFolder`이며, 일반 Drive 폴더에는 사용자가 명시적으로 Export할 때만 파일을 만든다.
-
-백업 매니페스트에는 다음 필드를 포함한다.
-
-```json
-{
-  "formatVersion": 1,
-  "backupId": "uuid",
-  "deviceId": "device-identifier",
-  "createdAt": "2026-09-03T02:00:00Z",
-  "lastModifiedAt": "2026-09-03T02:10:00Z",
-  "encrypted": true,
-  "contentHash": "sha256"
-}
-```
-
-복원 전에는 매니페스트 버전과 콘텐츠 해시를 검증한다. 같은 `backupId`의 변경본은
-변경 시각과 해시를 비교하고, 충돌하면 자동 덮어쓰기 대신 복사본을 만들거나 사용자에게
-선택을 요청한다.
 
 ## 오류 규칙
 

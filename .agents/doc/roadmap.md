@@ -15,17 +15,18 @@ Android/iOS 휴대폰에서 사용자가 추적을 시작하면 위치를 주기
 Flutter mobile (Android/iOS)
   ├─ location service: foreground/background GPS
   ├─ local database: location, marker, media metadata
-  ├─ encrypted local media files
+  ├─ local media files
   └─ Google Drive backup/restore client
              ↓ OAuth + Drive API
         Google Drive appDataFolder
              ↓
-        PC app/web backup restore viewer
+        PC app/web backup restore viewer (후속 단계)
 ```
 
 Flutter를 모바일 공통 UI와 향후 Windows/Linux 확장의 기반으로 사용한다.
-PC는 동일 Google 계정으로 Drive 백업을 복원하는 웹 뷰어를 우선 제공하고,
-오프라인·시스템 통합 요구가 확실해질 때 Flutter Desktop을 추가한다.
+PC 조회는 모바일 MVP 이후의 별도 단계다. Windows/Linux에서의 웹 또는 데스크톱
+제공 방식은 해당 단계에서 결정한다. 암호화 백업을 읽으려면 Google 계정 접근 권한과
+백업 암호가 모두 필요하다.
 
 ### 지도 공급자 정책
 
@@ -57,17 +58,21 @@ MVP(Minimum Viable Product)는 모든 기능을 포함한 최종 제품이 아�
 - 사진·동영상 촬영 위치·시각 저장
 - 미디어가 있는 위치의 아이콘과 썸네일 표시
 
-### MVP 3 — 데이터 관리
+### MVP 3 — Google Drive 백업·복원
 
-- Google Drive 백업·복원 및 PC 날짜별 경로 조회
-- PC에서 Drive 백업의 마커·미디어 조회
 - JSON/GeoJSON/GPX Import/Export
-- Google Drive 개인 백업·복원 동기화
-- 잘못된 파일·중복 데이터·부분 업로드 처리
-- 사용자 데이터 삭제
+- 시점별 암호화 백업 생성·업로드·검증 및 백업 목록 표시
+- 기존 휴대폰 없이 새 휴대폰에서 Google 계정과 백업 암호로 복원
+- 기록 백업과 미디어 포함 전체 백업을 구분하고 실제 포함 내역 표시
+- 잘못된 파일·중복 데이터·부분 업로드 처리 및 실패 시 이전 정상 백업 유지
+- 로컬 데이터 삭제와 Drive 백업 삭제를 구분
+
+PC 조회는 이 MVP의 완료 조건에 포함하지 않고 후속 단계에서 검증한다.
 
 ## 위치 수집 정책 초안
 
+- 현재 GPS 프로토타입은 `distanceFilter: 20m`만 적용하며, 로컬 저장이나 시간 기준
+  수집은 아직 구현하지 않았다. 아래는 MVP 1에서 서비스 계층으로 구현·검증할 목표 정책이다.
 - 일반 모드: 이동 거리 50m 또는 최대 30초마다 수집
 - 정지 감지 시: 최대 5분 간격으로 완화
 - 각 점에 `recordedAt`, 좌표, 정확도, 고도, 속도, 방향, 배터리 상태를 저장
@@ -77,26 +82,28 @@ MVP(Minimum Viable Product)는 모든 기능을 포함한 최종 제품이 아�
 
 ## 핵심 데이터 모델
 
-### `users`
+### 로컬 소유권과 Google 계정 연결
 
-`id`, `email`, `created_at`
+별도 서비스 회원가입 없이 로컬 기록을 시작한다. Google 계정은 백업 기능을 선택할 때
+연결하며, 연결 해제는 로컬 데이터 삭제를 의미하지 않는다. 연결 계정 변경 시 기존
+백업과 새 계정의 백업을 자동으로 합치지 않는다.
 
 ### `tracking_sessions`
 
-`id`, `user_id`, `started_at`, `ended_at`, `device_id`, `status`
+`id`, `started_at`, `ended_at`, `device_id`, `status`
 
 ### `location_points`
 
-`id`, `session_id`, `user_id`, `latitude`, `longitude`, `recorded_at`,
+`id`, `session_id`, `latitude`, `longitude`, `recorded_at`,
 `accuracy_m`, `altitude_m`, `speed_mps`, `heading_deg`, `battery_percent`,
-`address`, `place_name`, `sync_state`, `created_at`
+`address`, `place_name`, `created_at`
 
 ### `media_items`
 
-사진과 동영상 파일은 로컬 파일/오브젝트 스토리지에 저장하고 DB에는 메타데이터를
-저장한다. `id`, `user_id`, `session_id`, `location_point_id`, `type`(`photo`/`video`),
+사진과 동영상 파일은 앱의 로컬 저장소에 두고 DB에는 메타데이터를
+저장한다. `id`, `session_id`, `location_point_id`, `type`(`photo`/`video`),
 `file_uri`, `thumbnail_uri`, `captured_at`, `latitude`, `longitude`, `accuracy_m`,
-`width`, `height`, `duration_ms`, `sync_state`, `created_at`을 사용한다.
+`width`, `height`, `duration_ms`, `created_at`을 사용한다.
 
 촬영 당시 위치를 확보하지 못한 경우에도 미디어는 저장하되 `location_status`를
 `exact`, `last_known`, `unknown`으로 구분한다. 지도에는 좌표가 있는 미디어만 표시하고,
@@ -104,41 +111,47 @@ MVP(Minimum Viable Product)는 모든 기능을 포함한 최종 제품이 아�
 
 ### `map_markers`
 
-사용자가 직접 남기는 기억 장소다. `id`, `user_id`, `title`, `note`, `category`,
-`latitude`, `longitude`, `created_at`, `updated_at`, `sync_state`를 저장한다.
+사용자가 직접 남기는 기억 장소다. `id`, `title`, `note`, `category`,
+`latitude`, `longitude`, `created_at`, `updated_at`을 저장한다.
 자동 수집 위치와 구분하고 지도에서 추가·이동·편집·삭제할 수 있도록 한다.
 
 마커와 미디어의 연결은 `marker_media(marker_id, media_id)`로 별도 관리한다. 미디어의
 기본 위치는 촬영 좌표이며, `location_point_id`는 동일 시점의 자동 수집 위치를 가리키는
 선택 참조로만 사용한다.
 
-서버에서는 좌표를 PostGIS `geography(Point, 4326)`로도 저장하면 거리 계산과
-지리 검색을 효율적으로 처리할 수 있다. 모바일 로컬 DB에는 서버 ID와
-`client_event_id`를 함께 두어 재시도 시 멱등성을 보장한다. 동기화 대상에는
-`updated_at`, `deleted_at`을 두며, 삭제는 서버 동기화 전까지 tombstone으로 보존한다.
+기록 ID는 로컬에서 생성하며 백업·복원·Import 시 유지한다. 내보내기의 `clientEventId`는
+같은 기록 ID를 나타낸다. `updated_at`을 보존하되 시각만으로 충돌을 자동 해결하지 않는다.
+로컬 삭제는 현재 데이터에 적용하고 다음 스냅샷에서 제외한다. 과거 백업에는 삭제한
+기록이 남을 수 있으므로 보관 기간·원격 백업 삭제 및 복원 전 안내를 제공한다.
+현재 스냅샷 백업에는 서버 확인을 기다리는 행별 `sync_state`나 tombstone을 요구하지 않는다.
 
 ## Import/Export 범위
 
-- 앱 전용 버전 관리 JSON은 위치·세션·마커·미디어 메타데이터를 포함하는 완전 백업 포맷이다.
+- 기록 백업은 위치·세션·마커·관계·미디어 메타데이터를 필수로 포함한다.
+  미디어 원본은 제외하며, 이를 전체 백업으로 표시하지 않는다.
+- 미디어 포함 전체 백업은 위 기록과 참조된 모든 사진·동영상 원본을 포함한다.
+  원본이 누락되면 부분 백업으로 표시하고 누락 내역을 보여준다.
+- 앱 전용 JSON은 구조화된 기록을 담고, 미디어 포함 백업은 JSON과 파일을 패키지로 묶는다.
 - GeoJSON과 GPX는 위치·경로·좌표 마커만 내보내는 호환 포맷이며, 사진·동영상 원본과
   앱 전용 메모는 보장하지 않는다.
-- 미디어 원본은 선택적으로 압축 파일에 포함할 수 있고, 포함하지 않을 때는 메타데이터와
-  썸네일만 내보낸다.
-- 가져오기는 기본적으로 기존 데이터를 덮어쓰지 않으며, `client_event_id`와 콘텐츠 해시를
-  이용해 중복을 탐지한다.
+- 썸네일은 선택 사항이며 원본을 대체하지 않는다. 패키지 내부 파일은 미디어 ID와
+  상대 경로로 참조하고, 복원 기기의 절대 경로는 다시 생성한다.
+- 가져오기는 기본적으로 기존 데이터를 보존한다. 기록 ID로 중복을 구분하고,
+  동일 ID의 내용이 다르면 충돌로 안내한다. 미디어 해시는 파일 검증·중복 탐지에 사용한다.
 
 ## Google Drive 백업·복원
 
-- Google Drive는 자체 서버 동기화를 대체하기보다, 사용자의 개인 백업·기기 간 복원을
-  위한 선택적 동기화 대상으로 제공한다.
+- Google Drive는 현재 제품의 유일한 원격 백업 대상이며 별도 자체 서버는 필요하지 않다.
 - 자동 백업은 Google Drive의 앱 전용 숨김 저장소(`appDataFolder`)를 사용한다. 사용자가
   요청한 수동 Export만 일반 Drive 폴더 또는 공유 가능한 파일로 만든다.
 - OAuth 권한은 `drive.appdata`를 우선 사용하며, 일반 Drive 폴더를 선택하는 Export에만
   필요한 최소 추가 권한을 요청한다.
-- 백업 파일은 `formatVersion`, 생성 시각, 기기 ID, 변경 시각, 암호화 버전, 콘텐츠 해시를
-  포함한다. 위치·미디어 원본은 사용자가 선택한 경우에만 포함한다.
-- 동기화는 마지막 성공 시각 이후 변경분을 업로드하고, 충돌 시 자동 덮어쓰기 대신
-  복사본 생성 또는 사용자 선택으로 처리한다.
+- 초기 버전은 변경분 병합 대신 독립적인 시점별 전체 스냅샷을 생성한다.
+  기록 중인 DB 파일을 그대로 복사하지 않고 일관된 읽기 시점에서 JSON과 미디어 목록을 만든다.
+- 업로드한 파일을 검증한 후 완료 표식을 등록한다. 중단된 업로드는 복원 목록에서 제외하고
+  이전 정상 백업을 유지한다. 새 백업마다 고유 ID를 사용해 기기 간 덮어쓰기를 방지한다.
+- 파일 형식·복구 키·완료 표식·복원 검증의 상세 기준은
+  [백업 계약](./project-structure.md)을 따른다.
 - Google 계정 연결 해제, 백업 삭제, 자동 동기화 중지 기능을 제공한다.
 
 ## 개인정보와 데이터 보호 기준
@@ -147,9 +160,16 @@ MVP(Minimum Viable Product)는 모든 기능을 포함한 최종 제품이 아�
 - 로컬 DB·미디어 암호화 적용 여부와 Export 파일 암호 설정은 Google Drive 연동 전에 확정한다.
 - Google Drive 자동 백업도 암호화된 앱 전용 백업 파일만 사용하며, OAuth 토큰은 안전한
   플랫폼 저장소에 보관한다.
+- 백업 암호에서 복구 가능한 암호화 키를 만드는 방식을 기본 설계로 한다.
+  암호나 평문 키를 백업과 함께 저장하지 않으며, 기존 기기 없이 복원하는 절차를 검증한다.
+- Google 로그인만으로 백업 암호를 복구할 수 없음을 안내한다. 암호 분실 시 기존 백업을
+  복호화할 수 없으며, 암호 변경 전 백업에는 이전 암호가 필요하다.
 - 보관 기간, 전체 삭제, 개별 삭제, 백업 파일의 공유 책임을 사용자에게 명확히 안내한다.
 
 ## 단계별 작업
+
+실행 순서의 기준은 [TODOs.md](../TODOs.md)이다. 이 절은 단계별 범위만 정의한다.
+모바일 진행 순서는 Phase 0 → MVP 1 → MVP 2 → Phase 2 → MVP 3 → Phase 4이다.
 
 ### Phase 0 — 프로젝트 기반
 
@@ -159,7 +179,7 @@ MVP(Minimum Viable Product)는 모든 기능을 포함한 최종 제품이 아�
 - 카카오맵 앱 등록, 플랫폼 키, 무료 쿼터와 유료 전환 기준 확인
 - 개인정보 처리·위치 권한 문구 초안 작성
 
-### Phase 1 — 단말 로컬 MVP
+### MVP 1·2 — 단말 로컬 기능
 
 - 지도와 현재 위치
 - 추적 시작/중지
@@ -170,7 +190,7 @@ MVP(Minimum Viable Product)는 모든 기능을 포함한 최종 제품이 아�
 - 카카오맵을 기본 공급자로 연결하고 지도 공급자 추상화 검증
 - 사진 촬영 및 촬영 위치 메타데이터 저장
 - 지도상의 미디어 아이콘과 썸네일 미리보기
-- JSON/GeoJSON 기반 로컬 Import/Export
+- 사진·동영상 로컬 보존 및 위치 연결 검증
 
 ### Phase 2 — 백그라운드 안정화
 
@@ -181,19 +201,12 @@ MVP(Minimum Viable Product)는 모든 기능을 포함한 최종 제품이 아�
 - 실제 기기 장시간 테스트
 - 화면 잠금·백그라운드·네트워크 단절 중 위치 유실 여부 검증
 
-### Phase 3 — Google Drive 및 PC 뷰어
+### MVP 3 — 백업 기능 구현
 
 - Google OAuth와 앱 전용 Drive 백업·복원
-- PC 웹 지도, 날짜 필터, 점 상세 정보
-- Drive 백업에서 미디어·마커를 가져와 표시
-- 모바일/PC 간 Import/Export
+- 모바일 JSON/GeoJSON/GPX Import/Export
+- 백업 암호 설정·재설치 및 새 휴대폰 복원 검증
 - Google Drive 수동 Export와 자동 백업 설정
-
-## 향후 선택 확장 — 자체 서버
-
-여러 사용자 공유, 실시간 위치 공유, Drive를 거치지 않는 다중 기기 동기화가 필요할 때만
-자체 서버를 도입한다. 이때 기존 API 계약의 세션·위치 배치 업로드·PostgreSQL/PostGIS·인증
-설계를 다시 활성화한다. 현재 MVP와 활성 TODO에는 포함하지 않는다.
 
 ### Phase 4 — 주변 정보와 분석
 
@@ -217,12 +230,14 @@ MVP(Minimum Viable Product)는 모든 기능을 포함한 최종 제품이 아�
 - 미디어 EXIF 위치와 앱 수집 위치의 우선순위 및 개인정보 노출
 - Import 파일 검증, 악성 파일 차단, 중복 마커/미디어 병합 정책
 
-## 첫 구현 권장 순서
+## 후속 단계 — Windows/Linux PC 조회
 
-1. Flutter 빈 앱을 초기화하고 실제 Android/iOS 빌드를 통과시킨다.
-2. 로컬 위치 수집과 로컬 경로 표시만 먼저 완성한다.
-3. 실기기에서 30분 이상 백그라운드 테스트를 한다.
-4. 그 결과를 바탕으로 수집 정책을 확정한다.
-5. 사진·동영상과 사용자 마커를 로컬에서 먼저 완성한다.
-6. Import/Export를 추가해 데이터 이동성을 검증한다.
-7. Google Drive 백업·복원과 PC 뷰어를 추가한다.
+모바일 MVP 완료 후 제공한다. 웹·데스크톱 선택과 지도/OAuth 지원 방식은 이 단계에서
+결정한다. Google Drive 또는 Export 파일의 백업을 백업 암호로 복호화하고 날짜별 경로,
+마커, 사진·동영상을 조회한다. Windows와 Linux에서 각각 검증하며 자체 서버는 요구하지 않는다.
+
+## 향후 선택 확장
+
+- 변경분 백업·다중 기기 병합은 독립 스냅샷 백업·복원이 검증된 후 별도로 검토한다.
+- 자체 서버는 여러 사용자 공유 또는 실시간 위치 공유가 필요할 때만 도입한다.
+  [향후 API 계약](./api-contract.md)의 인증·PostgreSQL/PostGIS 설계는 현재 구현 대상이 아니다.

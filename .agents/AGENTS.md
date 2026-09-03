@@ -26,7 +26,8 @@ standard Markdown linting rules configured in `.markdownlint.json`.
 ## Canonical planning files
 
 - Product roadmap: `.agents/doc/roadmap.md`
-- API contract: `.agents/doc/api-contract.md`
+- Project structure and backup contract: `.agents/doc/project-structure.md`
+- Future server reference only: `.agents/doc/api-contract.md`
 - Execution checklist: `.agents/TODOs.md`
 
 ---
@@ -35,7 +36,7 @@ standard Markdown linting rules configured in `.markdownlint.json`.
 
 Use relative links for files within the repository.
 
-Example: [DESIGN.md](./DESIGN.md)
+Example: [roadmap.md](./doc/roadmap.md)
 
 ---
 

@@ -18,13 +18,13 @@ flutter run
 
 실제 GPS 테스트는 Android 또는 iOS 기기에서 수행합니다.
 
-## 다음 구현 순서
+## 개발 기준
 
-1. 저장 계층과 로컬 영속 저장소
-2. 추적 세션 및 날짜별 경로
-3. 지도 SDK 연결
-4. Android/iOS 백그라운드 추적
-5. 서버 동기화와 PC 웹 뷰어
+작업 순서와 체크 상태는 [TODOs.md](./.agents/TODOs.md)를 기준으로 관리합니다.
+현재 목표는 개인 휴대폰 로컬 저장과 Google Drive 백업·복원입니다.
+PC 조회는 모바일 MVP 이후 단계이며 자체 서버는 향후 선택 사항입니다.
 
-상세 범위는 `.agents/doc/roadmap.md`, API 계약은 `.agents/doc/api-contract.md`를 참고합니다.
+- [제품 로드맵](./.agents/doc/roadmap.md)
+- [백업·복원 계약](./.agents/doc/project-structure.md)
+- [향후 자체 서버 API 참고](./.agents/doc/api-contract.md)
 
