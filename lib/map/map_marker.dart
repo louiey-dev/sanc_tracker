@@ -6,6 +6,7 @@ class MapMarker {
     required this.longitude,
     this.note,
     this.category,
+    this.preferredMediaId,
   });
   final String id;
   final String title;
@@ -13,6 +14,7 @@ class MapMarker {
   final double longitude;
   final String? note;
   final String? category;
+  final String? preferredMediaId;
   factory MapMarker.fromJson(Map<String, Object?> json) => MapMarker(
     id: json['id']! as String,
     title: json['title']! as String,
@@ -20,6 +22,7 @@ class MapMarker {
     longitude: (json['longitude']! as num).toDouble(),
     note: json['note'] as String?,
     category: json['category'] as String?,
+    preferredMediaId: json['preferredMediaId'] as String?,
   );
   Map<String, Object?> toJson() => {
     'id': id,
@@ -28,5 +31,6 @@ class MapMarker {
     'longitude': longitude,
     'note': note,
     'category': category,
+    'preferredMediaId': preferredMediaId,
   };
 }

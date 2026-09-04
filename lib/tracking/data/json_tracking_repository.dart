@@ -5,6 +5,7 @@ import '../domain/location_point.dart';
 import '../domain/tracking_repository.dart';
 import '../domain/tracking_session.dart';
 import '../../map/map_marker.dart';
+import '../../media/media_item.dart';
 
 class JsonTrackingRepository implements TrackingRepository {
   Future<void> _queue = Future<void>.value();
@@ -18,6 +19,7 @@ class JsonTrackingRepository implements TrackingRepository {
         'sessions': <Object?>[],
         'points': <Object?>[],
         'markers': <Object?>[],
+        'media': <Object?>[],
       };
     return jsonDecode(await file.readAsString()) as Map<String, dynamic>;
   }
@@ -118,6 +120,38 @@ class JsonTrackingRepository implements TrackingRepository {
                 MapMarker.fromJson(Map<String, Object?>.from(item as Map)),
           )
           .toList();
+
+  @override
+  Future<void> saveMedia(MediaItem item) async {
+    _queue = _queue.then((_) async {
+      final data = await _read();
+      final list = (data['media'] ??= <Object?>[]) as List;
+      list.add(item.toJson());
+      await _write(data);
+    });
+    await _queue;
+  }
+
+  @override
+  Future<List<MediaItem>> loadMedia(String markerId) async =>
+      ((await _read())['media'] as List? ?? const [])
+          .where((item) => (item as Map)['markerId'] == markerId)
+          .map<MediaItem>(
+            (item) =>
+                MediaItem.fromJson(Map<String, Object?>.from(item as Map)),
+          )
+          .toList();
+
+  @override
+  Future<void> deleteMedia(String mediaId) async {
+    _queue = _queue.then((_) async {
+      final data = await _read();
+      final list = (data['media'] ??= <Object?>[]) as List;
+      list.removeWhere((item) => (item as Map)['id'] == mediaId);
+      await _write(data);
+    });
+    await _queue;
+  }
 
   @override
   Future<List<TrackingSession>> loadSessions() async =>

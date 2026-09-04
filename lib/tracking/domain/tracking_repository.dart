@@ -1,6 +1,7 @@
 import 'location_point.dart';
 import 'tracking_session.dart';
 import '../../map/map_marker.dart';
+import '../../media/media_item.dart';
 
 abstract interface class TrackingRepository {
   Future<void> saveSession(TrackingSession session);
@@ -14,4 +15,7 @@ abstract interface class TrackingRepository {
   Future<void> updateMarker(MapMarker marker);
   Future<void> deleteMarker(String markerId);
   Future<List<MapMarker>> loadMarkers();
+  Future<void> saveMedia(MediaItem item);
+  Future<List<MediaItem>> loadMedia(String markerId);
+  Future<void> deleteMedia(String mediaId);
 }

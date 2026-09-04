@@ -1,11 +1,18 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:kakao_map_sdk/kakao_map_sdk.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:gal/gal.dart';
+import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:path_provider/path_provider.dart';
 import 'tracking_controller.dart';
 import '../../map/map_marker.dart';
 import '../domain/tracking_repository.dart';
 import '../domain/tracking_session.dart';
+import '../../media/media_item.dart';
 
 class TrackingPage extends ConsumerStatefulWidget {
   const TrackingPage({super.key});
@@ -26,6 +33,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
   Poi? _selectedMarkerPoi;
   MapMarker? _selectedMarker;
   bool _isMarkerMoveMode = false;
+  bool _isMarkerSheetOpen = false;
   bool _isViewingSavedRoute = false;
   final List<MapMarker> _markers = [];
   final Map<String, Poi> _markerPois = {};
@@ -118,6 +126,16 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                     tooltip: '현재 위치로 이동',
                     onPressed: _moveToCurrentLocation,
                     child: const Icon(Icons.my_location),
+                  ),
+                ),
+                Positioned(
+                  left: 12,
+                  bottom: 12,
+                  child: FloatingActionButton.small(
+                    heroTag: 'capture-current-location',
+                    tooltip: '현재 위치에서 사진 촬영',
+                    onPressed: _captureAtCurrentLocation,
+                    child: const Icon(Icons.camera_alt),
                   ),
                 ),
                 Positioned(
@@ -332,7 +350,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
   Future<void> _addMarker(LatLng position) async {
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
-    final titleController = TextEditingController();
+    final titleController = TextEditingController(text: '장소 마커');
     final noteController = TextEditingController();
     final categoryController = TextEditingController();
     final result = await showDialog<Map<String, String>>(
@@ -427,7 +445,13 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
           id: marker.id,
           text: marker.title,
           style: PoiStyle(
-            icon: KImage.fromAsset('assets/icon/sanc_tracker_icon.png', 24, 24),
+            icon: KImage.fromAsset(
+              marker.category == '사진'
+                  ? 'assets/icon/sanc_photo_marker.png'
+                  : 'assets/icon/sanc_tracker_icon.png',
+              marker.category == '사진' ? 48 : 24,
+              marker.category == '사진' ? 48 : 24,
+            ),
             textStyle: const [
               PoiTextStyle(
                 size: 18,
@@ -457,10 +481,16 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
   }
 
   void _selectMarker(MapMarker marker, Poi poi) {
-    _selectedMarker = marker;
+    final currentMarker = _markers.firstWhere(
+      (item) => item.id == marker.id,
+      orElse: () => marker,
+    );
+    _selectedMarker = currentMarker;
     _selectedMarkerPoi = poi;
     _isMarkerMoveMode = false;
-    _showMarkerDetails(marker, poi.position);
+    Future<void>.delayed(const Duration(milliseconds: 250), () {
+      if (mounted) _showMarkerDetails(currentMarker, poi.position);
+    });
   }
 
   Future<void> _moveSelectedMarker(LatLng position) async {
@@ -476,6 +506,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
       longitude: position.longitude,
       note: marker.note,
       category: marker.category,
+      preferredMediaId: marker.preferredMediaId,
     );
     final index = _markers.indexWhere((item) => item.id == marker.id);
     if (index >= 0) {
@@ -535,10 +566,21 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
 
   Future<void> _showMarkerDetails(MapMarker marker, LatLng position) async {
     final poi = _selectedMarkerPoi;
-    if (!mounted || poi == null) return;
-    final shouldMove = await showDialog<Object?>(
+    if (!mounted || poi == null || _isMarkerSheetOpen) return;
+    _isMarkerSheetOpen = true;
+    final mediaFuture = ref
+        .read(trackingRepositoryProvider)
+        .loadMedia(marker.id);
+    final shouldMove = await showModalBottomSheet<Object?>(
+      isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      showDragHandle: true,
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: const Text('저장된 마커'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -555,29 +597,202 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
               style: const TextStyle(fontSize: 18),
             ),
             const SizedBox(height: 12),
+            FutureBuilder<List<MediaItem>>(
+              future: mediaFuture,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Text('사진 정보를 불러오지 못했습니다.');
+                }
+                if (!snapshot.hasData) {
+                  return const SizedBox(
+                    height: 40,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final media = snapshot.data;
+                if (media == null || media.isEmpty) {
+                  return const Text('연결된 사진 없음');
+                }
+                if (media.length > 1) {
+                  return Column(
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: media.map((item) {
+                          return GestureDetector(
+                            onTap: () => _openMedia(item, marker),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Image.file(
+                                  File(
+                                    item.type == MediaType.photo
+                                        ? item.filePath
+                                        : (item.thumbnailPath ?? item.filePath),
+                                  ),
+                                  width: 120,
+                                  height: 120,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      const ColoredBox(
+                                        color: Colors.black12,
+                                        child: SizedBox(
+                                          width: 120,
+                                          height: 120,
+                                        ),
+                                      ),
+                                ),
+                                if (item.type == MediaType.video)
+                                  const Icon(
+                                    Icons.play_circle,
+                                    size: 42,
+                                    color: Colors.white,
+                                  ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  );
+                }
+                final item = media.single;
+                if (item.type == MediaType.photo) {
+                  return GestureDetector(
+                    onTap: () => _showFullScreenPhoto(item.filePath),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(item.filePath),
+                        height: 180,
+                        width: 280,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox(
+                          height: 180,
+                          width: 280,
+                          child: Center(child: Text('사진 파일을 찾을 수 없습니다.')),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                return Column(
+                  children: [
+                    GestureDetector(
+                      onTap: () => _playVideo(item.filePath),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Image.file(
+                            File(item.thumbnailPath ?? item.filePath),
+                            height: 180,
+                            width: 280,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const SizedBox(
+                              height: 180,
+                              width: 280,
+                              child: ColoredBox(color: Colors.black12),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.play_circle,
+                            size: 56,
+                            color: Colors.white,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: () => _playVideo(item.filePath),
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('동영상 재생'),
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 12),
             if (marker.category != null) Text('분류: ${marker.category}'),
             if (marker.note != null) Text('메모: ${marker.note}'),
             if (marker.category != null || marker.note != null)
               const SizedBox(height: 8),
             const Text('이 마커를 이동하시겠습니까?'),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => _chooseCameraMedia(marker),
+                    icon: const Icon(Icons.camera_alt),
+                    label: const Text('촬영'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _pickMedia(marker, ImageSource.gallery),
+                    icon: const Icon(Icons.photo_library),
+                    label: const Text('갤러리'),
+                  ),
+                  FutureBuilder<List<MediaItem>>(
+                    future: mediaFuture,
+                    builder: (context, snapshot) {
+                      final media = snapshot.data ?? const <MediaItem>[];
+                      if (media.length != 1) return const SizedBox.shrink();
+                      final item = media.single;
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: OutlinedButton.icon(
+                          onPressed: () => item.type == MediaType.photo
+                              ? _showFullScreenPhoto(item.filePath)
+                              : _playVideo(item.filePath),
+                          icon: Icon(
+                            item.type == MediaType.photo
+                                ? Icons.photo
+                                : Icons.play_arrow,
+                          ),
+                          label: Text(
+                            item.type == MediaType.photo ? '사진 보기' : '동영상 보기',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('닫기'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('이동'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'delete'),
-            child: const Text('삭제'),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('닫기'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('이동'),
+                ),
+                TextButton(
+                  onPressed: () => _editMarker(marker, poi),
+                  child: const Text('수정'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, 'delete'),
+                  child: const Text('삭제'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
+    _isMarkerSheetOpen = false;
     if (shouldMove == 'delete') {
       await _deleteMarker(marker, poi);
     } else if (mounted && shouldMove == true) {
@@ -586,6 +801,632 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
         context,
       ).showSnackBar(const SnackBar(content: Text('이동할 새 위치를 지도에서 눌러주세요.')));
     }
+  }
+
+  Future<void> _chooseCameraMedia(MapMarker marker) async {
+    final type = await showModalBottomSheet<MediaType>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('사진 촬영'),
+              onTap: () => Navigator.pop(context, MediaType.photo),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam),
+              title: const Text('동영상 촬영'),
+              onTap: () => Navigator.pop(context, MediaType.video),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || type == null) return;
+    if (type == MediaType.photo) {
+      await _pickMedia(marker, ImageSource.camera);
+    } else {
+      await _pickVideo(marker, ImageSource.camera);
+    }
+  }
+
+  void _showFullScreenPhoto(String path) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: EdgeInsets.zero,
+        backgroundColor: Colors.black,
+        child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: InteractiveViewer(
+            child: Image.file(File(path), fit: BoxFit.contain),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMediaChoice(MapMarker marker, List<MediaItem> media) async {
+    final selected = await showModalBottomSheet<MediaItem>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(16),
+          children: media.map((item) {
+            final isPhoto = item.type == MediaType.photo;
+            return ListTile(
+              leading: Icon(isPhoto ? Icons.photo : Icons.videocam),
+              title: Text(isPhoto ? '사진 보기' : '동영상 재생'),
+              subtitle: Text(item.recordedAt.toLocal().toString()),
+              onTap: () => Navigator.pop(context, item),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    if (selected.type == MediaType.photo) {
+      final updated = MapMarker(
+        id: marker.id,
+        title: marker.title,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+        note: marker.note,
+        category: marker.category,
+        preferredMediaId: selected.id,
+      );
+      final index = _markers.indexWhere((item) => item.id == marker.id);
+      if (index >= 0) _markers[index] = updated;
+      _markersNotifier.value = List.unmodifiable(_markers);
+      await ref.read(trackingRepositoryProvider).updateMarker(updated);
+      if (mounted) _showFullScreenPhoto(selected.filePath);
+    } else {
+      await _playVideo(selected.filePath);
+    }
+  }
+
+  Future<void> _openMedia(MediaItem item, MapMarker marker) async {
+    if (item.type == MediaType.video) {
+      await _playVideo(item.filePath);
+      return;
+    }
+    final updated = MapMarker(
+      id: marker.id,
+      title: marker.title,
+      latitude: marker.latitude,
+      longitude: marker.longitude,
+      note: marker.note,
+      category: marker.category,
+      preferredMediaId: item.id,
+    );
+    final index = _markers.indexWhere((m) => m.id == marker.id);
+    if (index >= 0) _markers[index] = updated;
+    _markersNotifier.value = List.unmodifiable(_markers);
+    await ref.read(trackingRepositoryProvider).updateMarker(updated);
+    if (mounted) _showFullScreenPhoto(item.filePath);
+  }
+
+  Future<void> _showMarkerPhotos(MapMarker marker) async {
+    final media = await ref
+        .read(trackingRepositoryProvider)
+        .loadMedia(marker.id);
+    if (!mounted) return;
+    if (media.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('이 마커에 연결된 사진이 없습니다.')));
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          shrinkWrap: true,
+          children: media
+              .where((item) => File(item.filePath).existsSync())
+              .map((item) => _buildMediaEntry(item, marker))
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMediaEntry(MediaItem item, MapMarker marker) {
+    if (item.type == MediaType.video) {
+      return ListTile(
+        leading: const Icon(Icons.play_circle),
+        title: const Text('동영상'),
+        onTap: () => _playVideo(item.filePath),
+        trailing: TextButton(
+          onPressed: () => _deleteMedia(item),
+          child: const Text('연결 해제'),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        children: [
+          GestureDetector(
+            onTap: () async {
+              final updated = MapMarker(
+                id: marker.id,
+                title: marker.title,
+                latitude: marker.latitude,
+                longitude: marker.longitude,
+                note: marker.note,
+                category: marker.category,
+                preferredMediaId: item.id,
+              );
+              final index = _markers.indexWhere((m) => m.id == marker.id);
+              if (index >= 0) _markers[index] = updated;
+              _markersNotifier.value = List.unmodifiable(_markers);
+              await ref.read(trackingRepositoryProvider).updateMarker(updated);
+              if (mounted) _showFullScreenPhoto(item.filePath);
+            },
+            child: Image.file(
+              File(item.filePath),
+              height: 220,
+              fit: BoxFit.cover,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => _deleteMedia(item),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('사진 제거'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _playVideo(String path) async {
+    final controller = VideoPlayerController.file(File(path));
+    try {
+      await controller.initialize();
+      if (!mounted) return;
+      await controller.play();
+      await showDialog<void>(
+        context: context,
+        builder: (context) => Dialog(
+          child: AspectRatio(
+            aspectRatio: controller.value.aspectRatio,
+            child: VideoPlayer(controller),
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('동영상 재생 실패: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('동영상 파일을 재생할 수 없습니다.')));
+      }
+    } finally {
+      await controller.dispose();
+    }
+  }
+
+  Future<void> _deleteMedia(MediaItem item) async {
+    await ref.read(trackingRepositoryProvider).deleteMedia(item.id);
+    if (!mounted) return;
+    Navigator.pop(context);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('사진을 제거했습니다.')));
+  }
+
+  Future<void> _editMarker(MapMarker marker, Poi poi) async {
+    final titleController = TextEditingController(text: marker.title);
+    final noteController = TextEditingController(text: marker.note ?? '');
+    final categoryController = TextEditingController(
+      text: marker.category ?? '',
+    );
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('마커 수정'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              decoration: const InputDecoration(labelText: '이름'),
+            ),
+            TextField(
+              controller: noteController,
+              decoration: const InputDecoration(labelText: '메모'),
+            ),
+            TextField(
+              controller: categoryController,
+              decoration: const InputDecoration(labelText: '분류'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, {
+              'title': titleController.text.trim(),
+              'note': noteController.text.trim(),
+              'category': categoryController.text.trim(),
+            }),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    final title = result?['title'];
+    if (!mounted || title == null || title.isEmpty) return;
+    final updated = MapMarker(
+      id: marker.id,
+      title: title,
+      latitude: marker.latitude,
+      longitude: marker.longitude,
+      note: result?['note']?.isEmpty == true ? null : result?['note'],
+      category: result?['category']?.isEmpty == true
+          ? null
+          : result?['category'],
+    );
+    await poi.changeText(updated.title);
+    final index = _markers.indexWhere((item) => item.id == marker.id);
+    if (index >= 0) _markers[index] = updated;
+    _markersNotifier.value = List.unmodifiable(_markers);
+    await ref.read(trackingRepositoryProvider).updateMarker(updated);
+  }
+
+  Future<void> _pickMedia(MapMarker marker, ImageSource source) async {
+    final file = await ImagePicker().pickImage(source: source);
+    if (!mounted || file == null) return;
+    final savedPath = await _persistMediaFile(file);
+    if (!mounted || savedPath == null) return;
+    final thumbnailPath = await _persistPhotoThumbnail(savedPath);
+    final item = MediaItem(
+      id: 'media-${DateTime.now().microsecondsSinceEpoch}',
+      markerId: marker.id,
+      type: MediaType.photo,
+      filePath: savedPath,
+      thumbnailPath: thumbnailPath ?? savedPath,
+      recordedAt: DateTime.now().toUtc(),
+      latitude: marker.latitude,
+      longitude: marker.longitude,
+      locationSource: MediaLocationSource.exact,
+    );
+    if (!await _saveMediaSafely(item)) return;
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('사진과 위치 정보를 저장했습니다.')));
+    }
+  }
+
+  Future<void> _pickVideo(MapMarker marker, ImageSource source) async {
+    final file = await ImagePicker().pickVideo(source: source);
+    if (!mounted || file == null) return;
+    final savedPath = await _persistMediaFile(file);
+    if (!mounted || savedPath == null) return;
+    String? thumbnailPath;
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      thumbnailPath = await VideoThumbnail.thumbnailFile(
+        video: savedPath,
+        thumbnailPath: root.path,
+        imageFormat: ImageFormat.PNG,
+        maxHeight: 240,
+        quality: 75,
+      );
+    } catch (error) {
+      debugPrint('동영상 썸네일 생성 실패: $error');
+    }
+    final item = MediaItem(
+      id: 'media-${DateTime.now().microsecondsSinceEpoch}',
+      markerId: marker.id,
+      type: MediaType.video,
+      filePath: savedPath,
+      thumbnailPath: thumbnailPath ?? savedPath,
+      recordedAt: DateTime.now().toUtc(),
+      latitude: marker.latitude,
+      longitude: marker.longitude,
+      locationSource: MediaLocationSource.exact,
+    );
+    if (!await _saveMediaSafely(item)) return;
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('동영상과 위치 정보를 저장했습니다.')));
+    }
+  }
+
+  Future<bool> _saveMediaSafely(MediaItem item) async {
+    try {
+      await ref.read(trackingRepositoryProvider).saveMedia(item);
+      return true;
+    } catch (error) {
+      debugPrint('미디어 메타데이터 저장 실패: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('미디어 정보를 저장하지 못했습니다. 원본 파일은 보존됩니다.')),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<String?> _persistMediaFile(XFile file) async {
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      final mediaDirectory = Directory(
+        '${root.path}${Platform.pathSeparator}media${Platform.pathSeparator}originals',
+      );
+      await mediaDirectory.create(recursive: true);
+      final extension = file.path.contains('.')
+          ? file.path.substring(file.path.lastIndexOf('.'))
+          : '.jpg';
+      final destination = File(
+        '${mediaDirectory.path}${Platform.pathSeparator}media-'
+        '${DateTime.now().microsecondsSinceEpoch}$extension',
+      );
+      return (await File(file.path).copy(destination.path)).path;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('사진을 저장하지 못했습니다: $error')));
+      }
+      return null;
+    }
+  }
+
+  Future<String?> _persistPhotoThumbnail(String originalPath) async {
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      final thumbnailDirectory = Directory(
+        '${root.path}${Platform.pathSeparator}media${Platform.pathSeparator}thumbnails',
+      );
+      await thumbnailDirectory.create(recursive: true);
+      final extension = originalPath.contains('.')
+          ? originalPath.substring(originalPath.lastIndexOf('.'))
+          : '.jpg';
+      final destination = File(
+        '${thumbnailDirectory.path}${Platform.pathSeparator}thumb-'
+        '${DateTime.now().microsecondsSinceEpoch}$extension',
+      );
+      return (await File(originalPath).copy(destination.path)).path;
+    } catch (error) {
+      debugPrint('사진 썸네일 저장 실패: $error');
+      return null;
+    }
+  }
+
+  Future<void> _captureAtCurrentLocation() async {
+    final type = await showModalBottomSheet<MediaType>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('사진 촬영'),
+              onTap: () => Navigator.pop(context, MediaType.photo),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam),
+              title: const Text('동영상 촬영'),
+              onTap: () => Navigator.pop(context, MediaType.video),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || type == null) return;
+    if (type == MediaType.video) {
+      await _captureVideoAtCurrentLocation();
+      return;
+    }
+    await _capturePhotoAtCurrentLocation();
+  }
+
+  Future<void> _capturePhotoAtCurrentLocation() async {
+    final position = ref.read(trackingControllerProvider).currentPosition;
+    if (position == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('현재 위치를 아직 확인하지 못했습니다.')));
+      return;
+    }
+    final file = await ImagePicker().pickImage(source: ImageSource.camera);
+    if (!mounted || file == null || _mapController == null) return;
+    final savedPath = await _persistMediaFile(file);
+    if (!mounted || savedPath == null) return;
+    final thumbnailPath = await _persistPhotoThumbnail(savedPath);
+    final titleController = TextEditingController(
+      text: '사진 ${DateTime.now().toLocal().toString().substring(0, 16)}',
+    );
+    final memoController = TextEditingController();
+    final photoInfo = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('사진 메모'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              decoration: const InputDecoration(labelText: '마커 이름'),
+            ),
+            TextField(
+              controller: memoController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: '메모(선택)',
+                hintText: '사진에 대한 메모를 입력하세요',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('건너뛰기'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, {
+              'title': titleController.text.trim(),
+              'note': memoController.text.trim(),
+            }),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    final capturedAt = DateTime.now().toUtc();
+    final markerTitle = photoInfo?['title'];
+    if (!mounted || markerTitle == null || markerTitle.isEmpty) return;
+    final marker = MapMarker(
+      id: 'marker-${DateTime.now().microsecondsSinceEpoch}',
+      title: markerTitle,
+      latitude: position.latitude,
+      longitude: position.longitude,
+      note: photoInfo?['note']?.isEmpty == true ? null : photoInfo?['note'],
+      category: '사진',
+    );
+    final mapController = _mapController!;
+    final poi = await mapController.labelLayer.addPoi(
+      LatLng(marker.latitude, marker.longitude),
+      id: marker.id,
+      text: marker.title,
+      rank: 100,
+      style: PoiStyle(
+        icon: KImage.fromAsset('assets/icon/sanc_photo_marker.png', 48, 48),
+        textStyle: const [
+          PoiTextStyle(
+            size: 18,
+            color: Colors.black,
+            stroke: 3,
+            strokeColor: Colors.white,
+          ),
+        ],
+      ),
+    );
+    poi.onClick = () => _selectMarker(marker, poi);
+    mapController.moveCamera(
+      CameraUpdate.newCenterPosition(LatLng(marker.latitude, marker.longitude)),
+    );
+    _markerPois[marker.id] = poi;
+    _markers.add(marker);
+    _markersNotifier.value = List.unmodifiable(_markers);
+    await ref.read(trackingRepositoryProvider).saveMarker(marker);
+    final savedMedia = await _saveMediaSafely(
+      MediaItem(
+        id: 'media-${DateTime.now().microsecondsSinceEpoch}',
+        markerId: marker.id,
+        type: MediaType.photo,
+        filePath: savedPath,
+        thumbnailPath: thumbnailPath ?? savedPath,
+        recordedAt: capturedAt,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        locationSource: MediaLocationSource.exact,
+      ),
+    );
+    if (!savedMedia) return;
+    try {
+      await Gal.putImage(savedPath, album: 'SANC Tracker');
+    } catch (error) {
+      debugPrint('카메라 사진 갤러리 저장 지연: $error');
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('사진과 촬영 위치·시간을 저장했습니다.')));
+    }
+  }
+
+  Future<void> _captureVideoAtCurrentLocation() async {
+    final position = ref.read(trackingControllerProvider).currentPosition;
+    if (position == null || _mapController == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('현재 위치를 아직 확인하지 못했습니다.')));
+      }
+      return;
+    }
+    final file = await ImagePicker().pickVideo(source: ImageSource.camera);
+    if (!mounted || file == null) return;
+    final savedPath = await _persistMediaFile(file);
+    if (!mounted || savedPath == null) return;
+    String? thumbnailPath;
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      thumbnailPath = await VideoThumbnail.thumbnailFile(
+        video: savedPath,
+        thumbnailPath: root.path,
+        imageFormat: ImageFormat.PNG,
+        maxHeight: 240,
+        quality: 75,
+      );
+    } catch (error) {
+      debugPrint('동영상 썸네일 생성 실패: $error');
+    }
+    final marker = MapMarker(
+      id: 'marker-${DateTime.now().microsecondsSinceEpoch}',
+      title: '동영상 ${DateTime.now().toLocal().toString().substring(0, 16)}',
+      latitude: position.latitude,
+      longitude: position.longitude,
+      category: '동영상',
+    );
+    final poi = await _mapController!.labelLayer.addPoi(
+      LatLng(marker.latitude, marker.longitude),
+      id: marker.id,
+      text: marker.title,
+      rank: 100,
+      style: PoiStyle(
+        icon: KImage.fromAsset('assets/icon/sanc_tracker_icon.png', 24, 24),
+        textStyle: const [
+          PoiTextStyle(
+            size: 18,
+            color: Colors.black,
+            stroke: 3,
+            strokeColor: Colors.white,
+          ),
+        ],
+      ),
+    );
+    poi.onClick = () => _selectMarker(marker, poi);
+    _markerPois[marker.id] = poi;
+    _markers.add(marker);
+    _markersNotifier.value = List.unmodifiable(_markers);
+    await ref.read(trackingRepositoryProvider).saveMarker(marker);
+    await _saveMediaSafely(
+      MediaItem(
+        id: 'media-${DateTime.now().microsecondsSinceEpoch}',
+        markerId: marker.id,
+        type: MediaType.video,
+        filePath: savedPath,
+        thumbnailPath: thumbnailPath ?? savedPath,
+        recordedAt: DateTime.now().toUtc(),
+        latitude: position.latitude,
+        longitude: position.longitude,
+        locationSource: MediaLocationSource.exact,
+      ),
+    );
   }
 
   Future<void> _drawRoute(List<Position> points) async {

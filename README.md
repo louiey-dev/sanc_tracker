@@ -76,3 +76,7 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
   - 마커 이동 후 좌표 저장
   - 마커 삭제 시 로컬 데이터에서도 삭제
   - 마커 목록 표시 및 위치 이동, 삭제
+  - 사진·동영상 마커 팝업 미리보기
+  - 사진 즉시 열기
+  - 동영상 즉시 재생
+  - 실제 동작 검증 완료
