@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:kakao_maps_flutter/kakao_maps_flutter.dart';
+import 'package:kakao_map_sdk/kakao_map_sdk.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'core/app_config.dart';
 import 'core/app_logger.dart';
 import 'tracking/presentation/tracking_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await WakelockPlus.enable();
   final config = AppConfig.fromEnvironment();
-  await KakaoMapsFlutter.init(
-    config.kakaoNativeAppKey,
-    webAPIKey: config.kakaoWebAppKey.isEmpty ? null : config.kakaoWebAppKey,
-  );
+  await KakaoMapSdk.instance.initialize(config.kakaoNativeAppKey);
   runApp(
     ProviderScope(
       overrides: [appConfigProvider.overrideWithValue(config)],
@@ -39,6 +38,7 @@ class SancTrackerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'SANC Tracker',
+    debugShowCheckedModeBanner: false,
     theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
     initialRoute: '/',
     routes: {'/': (_) => const TrackingPage()},

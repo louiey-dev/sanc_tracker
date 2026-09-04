@@ -21,7 +21,9 @@ class GeolocatorLocationService implements LocationService {
   Stream<Position> positionStream() => Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 20,
+      // MVP 1 기본 수집 정책: 50m 이동 시 위치를 수집한다.
+      // 정지 상태에서의 최대 5분 완화 주기는 백그라운드 안정화 단계에서 추가한다.
+      distanceFilter: 50,
     ),
   );
 }

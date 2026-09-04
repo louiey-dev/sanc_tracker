@@ -16,6 +16,13 @@ flutter pub get
 flutter run
 ```
 
+```bash
+# Android 실행
+flutter clean
+flutter pub get
+flutter run -d R3CXB0P55MB --dart-define=SANC_ENV=development --dart-define=KAKAO_NATIVE_APP_KEY=516e70905f94b10af9e3b6b6942f360f
+```
+
 실제 GPS 테스트는 Android 또는 iOS 기기에서 수행합니다.
 
 ## 개발 기준
@@ -38,3 +45,5 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
 
 - 2026.09.03
   - kakao map displayed
+- 2026.09.04
+  - 저장된 경로 표시 및 open 하여 경로확인 가능
