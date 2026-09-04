@@ -44,6 +44,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     _markersNotifier = ValueNotifier(_markers);
     _loadSavedMarkers();
     ref.read(trackingControllerProvider.notifier).restoreActiveSession();
+    ref.read(trackingControllerProvider.notifier).loadCurrentPosition();
     ref.listenManual(trackingControllerProvider, (previous, next) {
       final p = next.currentPosition;
       final c = _mapController;

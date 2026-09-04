@@ -68,3 +68,6 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
   - 저장된 세션 삭제 기능 추가
   - 경로 불러오기 메뉴 추가
   - 마커 저장/불러오기 추가
+  - 추적을 시작하지 않아도 현재 위치를 한 번 확인
+  - 현재 위치 마커 표시
+  - 잠금·백그라운드 상태에서 동작

@@ -58,6 +58,21 @@ class TrackingController extends Notifier<TrackingState> {
     );
   }
 
+  Future<void> loadCurrentPosition() async {
+    final service = ref.read(locationServiceProvider);
+    if (!await service.isServiceEnabled()) return;
+    final permission = await service.requestPermissionIfNeeded();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever)
+      return;
+    try {
+      final position = await service.getCurrentPosition();
+      state = state.copyWith(currentPosition: position);
+    } catch (error) {
+      state = state.copyWith(message: '현재 위치를 확인하지 못했습니다: $error');
+    }
+  }
+
   Future<void> loadSessionRoute(TrackingSession session) async {
     final points = await ref
         .read(trackingRepositoryProvider)
@@ -131,6 +146,12 @@ class TrackingController extends Notifier<TrackingState> {
       updatedAt: DateTime.now().toUtc(),
     );
     await ref.read(trackingRepositoryProvider).saveSession(_session!);
+    try {
+      final position = await service.getCurrentPosition();
+      state = state.copyWith(currentPosition: position, route: [position]);
+    } catch (_) {
+      // The stream below remains the source of truth if the one-shot lookup fails.
+    }
     _subscription = service.positionStream().listen(
       (position) {
         final accuracyMessage = position.accuracy > 100
