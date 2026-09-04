@@ -52,7 +52,6 @@ class TrackingController extends Notifier<TrackingState> {
         )
         .toList();
     state = state.copyWith(
-      currentPosition: route.isEmpty ? null : route.last,
       route: route,
       isTracking: true,
       message: '이전 추적 세션을 복구했습니다. ${route.length}개의 위치를 불러왔습니다.',
@@ -80,10 +79,13 @@ class TrackingController extends Notifier<TrackingState> {
         )
         .toList();
     state = state.copyWith(
-      currentPosition: route.isEmpty ? null : route.last,
       route: route,
       message: '${route.length}개의 저장된 위치를 불러왔습니다.',
     );
+  }
+
+  void clearLoadedSessionRoute() {
+    state = state.copyWith(route: const [], message: '저장 경로 보기를 종료했습니다.');
   }
 
   Future<void> toggleTracking() async {

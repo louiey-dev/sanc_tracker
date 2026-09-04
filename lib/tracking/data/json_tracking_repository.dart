@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import '../domain/location_point.dart';
 import '../domain/tracking_repository.dart';
 import '../domain/tracking_session.dart';
+import '../../map/map_marker.dart';
 
 class JsonTrackingRepository implements TrackingRepository {
   Future<void> _queue = Future<void>.value();
@@ -13,7 +14,11 @@ class JsonTrackingRepository implements TrackingRepository {
   Future<Map<String, dynamic>> _read() async {
     final file = await _file;
     if (!await file.exists())
-      return {'sessions': <Object?>[], 'points': <Object?>[]};
+      return {
+        'sessions': <Object?>[],
+        'points': <Object?>[],
+        'markers': <Object?>[],
+      };
     return jsonDecode(await file.readAsString()) as Map<String, dynamic>;
   }
 
@@ -55,6 +60,64 @@ class JsonTrackingRepository implements TrackingRepository {
     });
     await _queue;
   }
+
+  @override
+  Future<void> deleteSession(String sessionId) async {
+    _queue = _queue.then((_) async {
+      final data = await _read();
+      (data['sessions'] as List).removeWhere(
+        (item) => (item as Map)['id'] == sessionId,
+      );
+      (data['points'] as List).removeWhere(
+        (item) => (item as Map)['sessionId'] == sessionId,
+      );
+      await _write(data);
+    });
+    await _queue;
+  }
+
+  @override
+  Future<void> saveMarker(MapMarker marker) async {
+    _queue = _queue.then((_) async {
+      final data = await _read();
+      final list = (data['markers'] ??= <Object?>[]) as List;
+      list.add(marker.toJson());
+      await _write(data);
+    });
+    await _queue;
+  }
+
+  @override
+  Future<void> updateMarker(MapMarker marker) async {
+    _queue = _queue.then((_) async {
+      final data = await _read();
+      final list = (data['markers'] ??= <Object?>[]) as List;
+      final index = list.indexWhere((item) => (item as Map)['id'] == marker.id);
+      if (index >= 0) list[index] = marker.toJson();
+      await _write(data);
+    });
+    await _queue;
+  }
+
+  @override
+  Future<void> deleteMarker(String markerId) async {
+    _queue = _queue.then((_) async {
+      final data = await _read();
+      final list = (data['markers'] ??= <Object?>[]) as List;
+      list.removeWhere((item) => (item as Map)['id'] == markerId);
+      await _write(data);
+    });
+    await _queue;
+  }
+
+  @override
+  Future<List<MapMarker>> loadMarkers() async =>
+      ((await _read())['markers'] as List? ?? const [])
+          .map<MapMarker>(
+            (item) =>
+                MapMarker.fromJson(Map<String, Object?>.from(item as Map)),
+          )
+          .toList();
 
   @override
   Future<List<TrackingSession>> loadSessions() async =>

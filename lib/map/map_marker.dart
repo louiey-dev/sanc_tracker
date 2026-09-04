@@ -13,6 +13,14 @@ class MapMarker {
   final double longitude;
   final String? note;
   final String? category;
+  factory MapMarker.fromJson(Map<String, Object?> json) => MapMarker(
+    id: json['id']! as String,
+    title: json['title']! as String,
+    latitude: (json['latitude']! as num).toDouble(),
+    longitude: (json['longitude']! as num).toDouble(),
+    note: json['note'] as String?,
+    category: json['category'] as String?,
+  );
   Map<String, Object?> toJson() => {
     'id': id,
     'title': title,

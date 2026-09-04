@@ -5,6 +5,7 @@ import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 import 'tracking_controller.dart';
 import '../../map/map_marker.dart';
 import '../domain/tracking_repository.dart';
+import '../domain/tracking_session.dart';
 
 class TrackingPage extends ConsumerStatefulWidget {
   const TrackingPage({super.key});
@@ -16,12 +17,16 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     with WidgetsBindingObserver {
   KakaoMapController? _mapController;
   Poi? _currentPoi;
+  Polyline? _trackingRouteLine;
+  Poi? _routeStartPoi;
+  Poi? _routeEndPoi;
   bool _isMapExpanded = false;
   bool _isUpdatingCurrentPoi = false;
   LatLng? _pendingCurrentPosition;
   Poi? _selectedMarkerPoi;
   MapMarker? _selectedMarker;
   bool _isMarkerMoveMode = false;
+  bool _isViewingSavedRoute = false;
   final List<MapMarker> _markers = [];
   late final ValueNotifier<List<MapMarker>> _markersNotifier;
 
@@ -37,6 +42,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _markersNotifier = ValueNotifier(_markers);
+    _loadSavedMarkers();
     ref.read(trackingControllerProvider.notifier).restoreActiveSession();
     ref.listenManual(trackingControllerProvider, (previous, next) {
       final p = next.currentPosition;
@@ -161,21 +167,21 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
               return ExpansionTile(
                 leading: const Icon(Icons.route),
                 title: const Text('저장된 세션'),
+                trailing: _isViewingSavedRoute
+                    ? IconButton(
+                        tooltip: '저장 경로 보기 종료',
+                        icon: const Icon(Icons.close),
+                        onPressed: _exitSavedRoute,
+                      )
+                    : null,
                 children: sessions
                     .map(
                       (session) => ListTile(
                         leading: const Icon(Icons.route),
                         title: Text(session.startedAt.toLocal().toString()),
                         subtitle: Text(session.status.name),
-                        onTap: () async {
-                          await ref
-                              .read(trackingControllerProvider.notifier)
-                              .loadSessionRoute(session);
-                          if (mounted && _mapController != null)
-                            await _drawRoute(
-                              ref.read(trackingControllerProvider).route,
-                            );
-                        },
+                        onTap: () => _confirmLoadSession(session),
+                        onLongPress: () => _deleteSession(session),
                       ),
                     )
                     .toList(),
@@ -242,6 +248,84 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     );
   }
 
+  void _exitSavedRoute() {
+    final routeLine = _trackingRouteLine;
+    if (routeLine != null && _mapController != null) {
+      _mapController!.shapeLayer.removePolylineShape(routeLine);
+      _trackingRouteLine = null;
+    }
+    if (_mapController != null) {
+      if (_routeStartPoi != null) {
+        _mapController!.labelLayer.removePoi(_routeStartPoi!);
+      }
+      if (_routeEndPoi != null) {
+        _mapController!.labelLayer.removePoi(_routeEndPoi!);
+      }
+    }
+    _routeStartPoi = null;
+    _routeEndPoi = null;
+    ref.read(trackingControllerProvider.notifier).clearLoadedSessionRoute();
+    _isViewingSavedRoute = false;
+    _moveToCurrentLocation();
+  }
+
+  Future<void> _confirmLoadSession(TrackingSession session) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('저장된 경로 보기'),
+        content: const Text('이 세션의 저장된 이동 경로를 보시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    _isViewingSavedRoute = true;
+    await ref
+        .read(trackingControllerProvider.notifier)
+        .loadSessionRoute(session);
+    if (mounted && _mapController != null) {
+      await _drawRoute(ref.read(trackingControllerProvider).route);
+      setState(() {});
+    }
+  }
+
+  Future<void> _deleteSession(TrackingSession session) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('세션 삭제'),
+        content: const Text('이 세션과 저장된 위치 데이터를 삭제하시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(trackingRepositoryProvider).deleteSession(session.id);
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('세션과 위치 데이터가 삭제되었습니다.')));
+    }
+  }
+
   Future<void> _addMarker(LatLng position) async {
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
@@ -298,6 +382,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
       // platform-view overlay is added can trigger Flutter's dependents assertion.
       _markers.add(marker);
       _markersNotifier.value = List.unmodifiable(_markers);
+      await ref.read(trackingRepositoryProvider).saveMarker(marker);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -333,6 +418,16 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     }
   }
 
+  Future<void> _loadSavedMarkers() async {
+    final saved = await ref.read(trackingRepositoryProvider).loadMarkers();
+    if (!mounted || saved.isEmpty) return;
+    _markers
+      ..clear()
+      ..addAll(saved);
+    _markersNotifier.value = List.unmodifiable(_markers);
+    if (_mapController != null) await _restoreSavedMarkers(_mapController!);
+  }
+
   void _selectMarker(MapMarker marker, Poi poi) {
     _selectedMarker = marker;
     _selectedMarkerPoi = poi;
@@ -358,6 +453,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     if (index >= 0) {
       _markers[index] = _selectedMarker!;
       _markersNotifier.value = List.unmodifiable(_markers);
+      await ref.read(trackingRepositoryProvider).updateMarker(_selectedMarker!);
     }
     _selectedMarkerPoi = poi;
     if (mounted) {
@@ -387,6 +483,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     );
     if (confirmed != true) return;
     await poi.remove();
+    await ref.read(trackingRepositoryProvider).deleteMarker(marker.id);
     _markers.removeWhere((item) => item.id == marker.id);
     _markersNotifier.value = List.unmodifiable(_markers);
     if (_selectedMarker?.id == marker.id) {
@@ -449,11 +546,50 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
 
   Future<void> _drawRoute(List<Position> points) async {
     if (_mapController == null || points.length < 2) return;
-    await _mapController!.shapeLayer.addPolylineShape(
+    if (_routeStartPoi != null) {
+      await _mapController!.labelLayer.removePoi(_routeStartPoi!);
+      _routeStartPoi = null;
+    }
+    if (_routeEndPoi != null) {
+      await _mapController!.labelLayer.removePoi(_routeEndPoi!);
+      _routeEndPoi = null;
+    }
+    final previousLine = _trackingRouteLine;
+    if (previousLine != null) {
+      await _mapController!.shapeLayer.removePolylineShape(previousLine);
+    }
+    _trackingRouteLine = await _mapController!.shapeLayer.addPolylineShape(
       MapPoint(points.map((p) => LatLng(p.latitude, p.longitude)).toList()),
       PolylineStyle(Colors.indigo, 10),
       PolylineCap.round,
       id: 'tracking-route',
+    );
+    final start = LatLng(points.first.latitude, points.first.longitude);
+    final end = LatLng(points.last.latitude, points.last.longitude);
+    final routeLabelStyle = PoiStyle(
+      icon: KImage.fromAsset('assets/icon/sanc_tracker_icon.png', 20, 20),
+      padding: 8,
+      textGravity: const MapGravity(HorizontalAlign.center, VerticalAlign.top),
+      textStyle: const [
+        PoiTextStyle(
+          size: 36,
+          color: Colors.black,
+          stroke: 6,
+          strokeColor: Colors.white,
+        ),
+      ],
+    );
+    _routeStartPoi = await _mapController!.labelLayer.addPoi(
+      start,
+      id: 'tracking-route-start',
+      text: '출발',
+      style: routeLabelStyle,
+    );
+    _routeEndPoi = await _mapController!.labelLayer.addPoi(
+      end,
+      id: 'tracking-route-end',
+      text: '도착',
+      style: routeLabelStyle,
     );
   }
 

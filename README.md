@@ -65,3 +65,6 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
   - 목록에서 마커를 누르면 해당 위치로 지도 이동
   - 새 마커 저장·삭제 시 목록도 갱신
   - 전체화면에서도 현재 위치 이동 아이콘 유지
+  - 저장된 세션 삭제 기능 추가
+  - 경로 불러오기 메뉴 추가
+  - 마커 저장/불러오기 추가
