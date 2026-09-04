@@ -80,3 +80,8 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
   - 사진 즉시 열기
   - 동영상 즉시 재생
   - 실제 동작 검증 완료
+  - 이동 경로 상세 정보 표시- 시작 시각
+  - 종료 시각
+  - 총 소요 시간
+  - 이동 거리
+  - 경로에 포인트 선택시 위치에 정보 표시

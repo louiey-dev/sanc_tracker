@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
 import 'tracking_controller.dart';
+import '../domain/location_point.dart';
 import '../../map/map_marker.dart';
 import '../domain/tracking_repository.dart';
 import '../domain/tracking_session.dart';
@@ -116,7 +117,9 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                     _drawRoute(tracking.route);
                   },
                   onTerrainLongClick: (_, position) => _addMarker(position),
-                  onMapClick: (_, position) => _moveSelectedMarker(position),
+                  onMapClick: (_, position) => _isViewingSavedRoute
+                      ? _showNearestRoutePoint(position)
+                      : _moveSelectedMarker(position),
                 ),
                 Positioned(
                   right: 12,
@@ -199,7 +202,13 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                       (session) => ListTile(
                         leading: const Icon(Icons.route),
                         title: Text(session.startedAt.toLocal().toString()),
-                        subtitle: Text(session.status.name),
+                        subtitle: FutureBuilder<String>(
+                          future: _sessionSummary(session),
+                          builder: (context, snapshot) => Text(
+                            snapshot.data ??
+                                '${session.status.name}\n상세 정보 계산 중...',
+                          ),
+                        ),
                         onTap: () => _confirmLoadSession(session),
                         onLongPress: () => _deleteSession(session),
                       ),
@@ -267,6 +276,89 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     _mapController?.moveCamera(
       CameraUpdate.newCenterPosition(LatLng(marker.latitude, marker.longitude)),
     );
+  }
+
+  Future<void> _showNearestRoutePoint(LatLng position) async {
+    final points = ref.read(trackingControllerProvider).route;
+    if (points.isEmpty || !mounted) return;
+    Position? nearest;
+    var nearestDistance = double.infinity;
+    for (final point in points) {
+      final distance = Geolocator.distanceBetween(
+        position.latitude,
+        position.longitude,
+        point.latitude,
+        point.longitude,
+      );
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = point;
+      }
+    }
+    if (nearest == null) return;
+    final point = nearest;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('경로 기록 위치'),
+        content: Text(
+          '기록 시각: ${point.timestamp?.toLocal() ?? '-'}\n'
+          '위도: ${point.latitude.toStringAsFixed(6)}\n'
+          '경도: ${point.longitude.toStringAsFixed(6)}\n'
+          '정확도: ${point.accuracy.toStringAsFixed(1)} m\n'
+          '선택 위치와 거리: ${nearestDistance.toStringAsFixed(1)} m',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String> _sessionSummary(TrackingSession session) async {
+    final points = await ref
+        .read(trackingRepositoryProvider)
+        .loadPoints(session.id);
+    final sorted = [...points]
+      ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
+    final start = sorted.isEmpty ? session.startedAt : sorted.first.recordedAt;
+    final end =
+        session.endedAt ??
+        (sorted.isEmpty ? session.updatedAt : sorted.last.recordedAt);
+    final distance = _calculateDistance(sorted);
+    return '${session.status.name}  ·  ${_formatDuration(end.difference(start))}\n'
+        '시작 ${_formatDateTime(start)}  /  종료 ${_formatDateTime(end)}\n'
+        '이동 거리 ${distance.toStringAsFixed(2)} km';
+  }
+
+  double _calculateDistance(List<LocationPoint> points) {
+    var meters = 0.0;
+    for (var i = 1; i < points.length; i++) {
+      meters += Geolocator.distanceBetween(
+        points[i - 1].latitude,
+        points[i - 1].longitude,
+        points[i].latitude,
+        points[i].longitude,
+      );
+    }
+    return meters / 1000;
+  }
+
+  String _formatDuration(Duration duration) {
+    final seconds = duration.inSeconds < 0 ? 0 : duration.inSeconds;
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    final secs = seconds % 60;
+    return hours > 0 ? '${hours}시간 ${minutes}분' : '${minutes}분 ${secs}초';
+  }
+
+  String _formatDateTime(DateTime value) {
+    final local = value.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.month}/${local.day} ${two(local.hour)}:${two(local.minute)}';
   }
 
   void _exitSavedRoute() {
