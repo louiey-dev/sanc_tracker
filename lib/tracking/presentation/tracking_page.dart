@@ -28,6 +28,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
   bool _isMarkerMoveMode = false;
   bool _isViewingSavedRoute = false;
   final List<MapMarker> _markers = [];
+  final Map<String, Poi> _markerPois = {};
   late final ValueNotifier<List<MapMarker>> _markersNotifier;
 
   @override
@@ -214,6 +215,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                               '${marker.longitude.toStringAsFixed(6)}',
                             ),
                             onTap: () => _focusMarker(marker),
+                            onLongPress: () => _deleteMarkerFromList(marker),
                           ),
                         )
                         .toList(),
@@ -331,14 +333,29 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
     final titleController = TextEditingController();
-    final title = await showDialog<String>(
+    final noteController = TextEditingController();
+    final categoryController = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('장소 마커 추가'),
-        content: TextField(
-          controller: titleController,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: '제목'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: '제목'),
+            ),
+            TextField(
+              controller: noteController,
+              decoration: const InputDecoration(labelText: '메모(선택)'),
+            ),
+            TextField(
+              controller: categoryController,
+              decoration: const InputDecoration(labelText: '분류(선택)'),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -346,13 +363,17 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
             child: const Text('취소'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.pop(context, titleController.text.trim()),
+            onPressed: () => Navigator.pop(context, {
+              'title': titleController.text.trim(),
+              'note': noteController.text.trim(),
+              'category': categoryController.text.trim(),
+            }),
             child: const Text('저장'),
           ),
         ],
       ),
     );
+    final title = result?['title'];
     if (!mounted || title == null || title.isEmpty || _mapController == null)
       return;
     final marker = MapMarker(
@@ -360,6 +381,10 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
       title: title,
       latitude: position.latitude,
       longitude: position.longitude,
+      note: result?['note']?.isEmpty == true ? null : result?['note'],
+      category: result?['category']?.isEmpty == true
+          ? null
+          : result?['category'],
     );
     try {
       final poi = await _mapController!.labelLayer.addPoi(
@@ -379,6 +404,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
         ),
       );
       poi.onClick = () => _selectMarker(marker, poi);
+      _markerPois[marker.id] = poi;
       // Keep the native map view mounted. Rebuilding it immediately after a
       // platform-view overlay is added can trigger Flutter's dependents assertion.
       _markers.add(marker);
@@ -413,6 +439,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
           ),
         );
         poi.onClick = () => _selectMarker(marker, poi);
+        _markerPois[marker.id] = poi;
       } catch (error) {
         debugPrint('저장 마커 복원 지연: $error');
       }
@@ -484,6 +511,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     );
     if (confirmed != true) return;
     await poi.remove();
+    _markerPois.remove(marker.id);
     await ref.read(trackingRepositoryProvider).deleteMarker(marker.id);
     _markers.removeWhere((item) => item.id == marker.id);
     _markersNotifier.value = List.unmodifiable(_markers);
@@ -492,6 +520,17 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
       _selectedMarkerPoi = null;
       _isMarkerMoveMode = false;
     }
+  }
+
+  Future<void> _deleteMarkerFromList(MapMarker marker) async {
+    final poi = _markerPois[marker.id];
+    if (poi == null) {
+      await ref.read(trackingRepositoryProvider).deleteMarker(marker.id);
+      _markers.removeWhere((item) => item.id == marker.id);
+      _markersNotifier.value = List.unmodifiable(_markers);
+      return;
+    }
+    await _deleteMarker(marker, poi);
   }
 
   Future<void> _showMarkerDetails(MapMarker marker, LatLng position) async {
@@ -516,6 +555,10 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
               style: const TextStyle(fontSize: 18),
             ),
             const SizedBox(height: 12),
+            if (marker.category != null) Text('분류: ${marker.category}'),
+            if (marker.note != null) Text('메모: ${marker.note}'),
+            if (marker.category != null || marker.note != null)
+              const SizedBox(height: 8),
             const Text('이 마커를 이동하시겠습니까?'),
           ],
         ),
