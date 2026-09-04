@@ -12,7 +12,8 @@ class TrackingPage extends ConsumerStatefulWidget {
   ConsumerState<TrackingPage> createState() => _TrackingPageState();
 }
 
-class _TrackingPageState extends ConsumerState<TrackingPage> {
+class _TrackingPageState extends ConsumerState<TrackingPage>
+    with WidgetsBindingObserver {
   KakaoMapController? _mapController;
   Poi? _currentPoi;
   bool _isMapExpanded = false;
@@ -22,9 +23,20 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
   MapMarker? _selectedMarker;
   bool _isMarkerMoveMode = false;
   final List<MapMarker> _markers = [];
+  late final ValueNotifier<List<MapMarker>> _markersNotifier;
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _markersNotifier.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _markersNotifier = ValueNotifier(_markers);
     ref.read(trackingControllerProvider.notifier).restoreActiveSession();
     ref.listenManual(trackingControllerProvider, (previous, next) {
       final p = next.currentPosition;
@@ -37,17 +49,34 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    final controller = _mapController;
+    final position = ref.read(trackingControllerProvider).currentPosition;
+    if (controller != null && position != null) {
+      _setCurrentLocationMarker(
+        controller,
+        LatLng(position.latitude, position.longitude),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final tracking = ref.watch(trackingControllerProvider);
     final p = tracking.currentPosition;
+    final bottomSafeArea = MediaQuery.paddingOf(context).bottom;
     return Scaffold(
       appBar: AppBar(title: const Text('SANC Tracker')),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottomSafeArea),
         children: [
           SizedBox(
             height: _isMapExpanded
-                ? MediaQuery.sizeOf(context).height - kToolbarHeight - 24
+                ? MediaQuery.sizeOf(context).height -
+                      kToolbarHeight -
+                      bottomSafeArea -
+                      64
                 : 280,
             child: Stack(
               children: [
@@ -67,6 +96,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
                         c,
                         LatLng(p.latitude, p.longitude),
                       );
+                    _restoreSavedMarkers(c);
                     _drawRoute(tracking.route);
                   },
                   onTerrainLongClick: (_, position) => _addMarker(position),
@@ -113,39 +143,6 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
               label: Text(tracking.isTracking ? '중지' : '시작'),
             ),
           ),
-          FutureBuilder(
-            future: ref.read(trackingRepositoryProvider).loadSessions(),
-            builder: (context, snapshot) {
-              final sessions = snapshot.data;
-              if (sessions == null || sessions.isEmpty) {
-                return const Text('저장된 세션 없음');
-              }
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '저장된 세션',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  ...sessions.map(
-                    (session) => FutureBuilder(
-                      future: ref
-                          .read(trackingRepositoryProvider)
-                          .loadPoints(session.id),
-                      builder: (context, pointSnapshot) => ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.route),
-                        title: Text(session.startedAt.toLocal().toString()),
-                        subtitle: Text(
-                          '저장된 위치: ${pointSnapshot.data?.length ?? 0}개',
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
           if (tracking.message != null)
             Card(
               color: Theme.of(context).colorScheme.errorContainer,
@@ -161,32 +158,62 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
               final sessions = snapshot.data;
               if (sessions == null || sessions.isEmpty)
                 return const SizedBox.shrink();
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '저장된 세션',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  ...sessions.map(
-                    (session) => ListTile(
-                      leading: const Icon(Icons.route),
-                      title: Text(session.startedAt.toLocal().toString()),
-                      subtitle: Text(session.status.name),
-                      onTap: () async {
-                        await ref
-                            .read(trackingControllerProvider.notifier)
-                            .loadSessionRoute(session);
-                        if (mounted && _mapController != null)
-                          await _drawRoute(
-                            ref.read(trackingControllerProvider).route,
-                          );
-                      },
-                    ),
-                  ),
-                ],
+              return ExpansionTile(
+                leading: const Icon(Icons.route),
+                title: const Text('저장된 세션'),
+                children: sessions
+                    .map(
+                      (session) => ListTile(
+                        leading: const Icon(Icons.route),
+                        title: Text(session.startedAt.toLocal().toString()),
+                        subtitle: Text(session.status.name),
+                        onTap: () async {
+                          await ref
+                              .read(trackingControllerProvider.notifier)
+                              .loadSessionRoute(session);
+                          if (mounted && _mapController != null)
+                            await _drawRoute(
+                              ref.read(trackingControllerProvider).route,
+                            );
+                        },
+                      ),
+                    )
+                    .toList(),
               );
             },
+          ),
+          const SizedBox(height: 16),
+          ExpansionTile(
+            leading: const Icon(Icons.place, color: Colors.red),
+            title: const Text('저장된 마커'),
+            children: [
+              ValueListenableBuilder<List<MapMarker>>(
+                valueListenable: _markersNotifier,
+                builder: (context, markers, child) {
+                  if (markers.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('저장된 마커 없음'),
+                    );
+                  }
+                  return Column(
+                    children: markers
+                        .map(
+                          (marker) => ListTile(
+                            leading: const Icon(Icons.place, color: Colors.red),
+                            title: Text(marker.title),
+                            subtitle: Text(
+                              '${marker.latitude.toStringAsFixed(6)}, '
+                              '${marker.longitude.toStringAsFixed(6)}',
+                            ),
+                            onTap: () => _focusMarker(marker),
+                          ),
+                        )
+                        .toList(),
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),
@@ -206,6 +233,12 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
       CameraUpdate.newCenterPosition(
         LatLng(position.latitude, position.longitude),
       ),
+    );
+  }
+
+  void _focusMarker(MapMarker marker) {
+    _mapController?.moveCamera(
+      CameraUpdate.newCenterPosition(LatLng(marker.latitude, marker.longitude)),
     );
   }
 
@@ -264,11 +297,38 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
       // Keep the native map view mounted. Rebuilding it immediately after a
       // platform-view overlay is added can trigger Flutter's dependents assertion.
       _markers.add(marker);
+      _markersNotifier.value = List.unmodifiable(_markers);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('마커를 저장하지 못했습니다: $error')));
+      }
+    }
+  }
+
+  Future<void> _restoreSavedMarkers(KakaoMapController controller) async {
+    for (final marker in _markers) {
+      try {
+        final poi = await controller.labelLayer.addPoi(
+          LatLng(marker.latitude, marker.longitude),
+          id: marker.id,
+          text: marker.title,
+          style: PoiStyle(
+            icon: KImage.fromAsset('assets/icon/sanc_tracker_icon.png', 24, 24),
+            textStyle: const [
+              PoiTextStyle(
+                size: 18,
+                color: Colors.black,
+                stroke: 3,
+                strokeColor: Colors.white,
+              ),
+            ],
+          ),
+        );
+        poi.onClick = () => _selectMarker(marker, poi);
+      } catch (error) {
+        debugPrint('저장 마커 복원 지연: $error');
       }
     }
   }
@@ -294,6 +354,11 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
       note: marker.note,
       category: marker.category,
     );
+    final index = _markers.indexWhere((item) => item.id == marker.id);
+    if (index >= 0) {
+      _markers[index] = _selectedMarker!;
+      _markersNotifier.value = List.unmodifiable(_markers);
+    }
     _selectedMarkerPoi = poi;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -323,6 +388,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
     if (confirmed != true) return;
     await poi.remove();
     _markers.removeWhere((item) => item.id == marker.id);
+    _markersNotifier.value = List.unmodifiable(_markers);
     if (_selectedMarker?.id == marker.id) {
       _selectedMarker = null;
       _selectedMarkerPoi = null;
@@ -414,8 +480,14 @@ class _TrackingPageState extends ConsumerState<TrackingPage> {
           ),
           const Size(24, 24),
         );
-        if (_currentPoi != null) {
-          await controller.labelLayer.removePoi(_currentPoi!);
+        final previousPoi = _currentPoi;
+        _currentPoi = null;
+        if (previousPoi != null) {
+          try {
+            await controller.labelLayer.removePoi(previousPoi);
+          } catch (error) {
+            debugPrint('이전 현재 위치 마커 제거 지연: $error');
+          }
         }
         _currentPoi = await controller.labelLayer.addPoi(
           nextPosition,
