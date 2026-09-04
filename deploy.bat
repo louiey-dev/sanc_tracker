@@ -1,0 +1,1 @@
+flutter clean; flutter pub get; if ($LASTEXITCODE -eq 0) { flutter run -d R3CXB0P55MB --dart-define=SANC_ENV=development --dart-define=KAKAO_NATIVE_APP_KEY=f55dc1925aa320a11a555036b3d248da }
