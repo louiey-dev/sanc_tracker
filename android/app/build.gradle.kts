@@ -35,6 +35,12 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Kakao Vector Map 1.3.0 uses native/JNI reflection. Keep the
+            // release APK unminified until the SDK is upgraded or its full
+            // R8 configuration is supplied; otherwise the map can silently
+            // fail to render even when the app itself starts normally.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

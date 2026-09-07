@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,11 +10,13 @@ import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
 import 'tracking_controller.dart';
+import '../data/tracking_preferences.dart';
 import '../domain/location_point.dart';
 import '../../map/map_marker.dart';
 import '../domain/tracking_repository.dart';
 import '../domain/tracking_session.dart';
 import '../../media/media_item.dart';
+import '../../media/photo_capture_service.dart';
 
 class TrackingPage extends ConsumerStatefulWidget {
   const TrackingPage({super.key});
@@ -38,6 +41,9 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
   bool _isViewingSavedRoute = false;
   bool _isSelectingSessions = false;
   bool _isDeletingSessions = false;
+  bool _photoBusy = true;
+  bool _isCameraActive = false;
+  bool _isMapInitialStateReady = false;
   final Set<String> _selectedSessionIds = {};
   final List<MapMarker> _markers = [];
   final Map<String, Poi> _markerPois = {};
@@ -55,12 +61,13 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _markersNotifier = ValueNotifier(_markers);
-    _loadSavedMarkers();
-    ref.read(trackingControllerProvider.notifier).restoreActiveSession();
-    ref.read(trackingControllerProvider.notifier).loadCurrentPosition();
+    _recoverPhotoCapture();
+    _initializeTracking();
     ref.listenManual(trackingControllerProvider, (previous, next) {
       final p = next.currentPosition;
       final c = _mapController;
+      if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed)
+        return;
       if (p == null || c == null) return;
       final ll = LatLng(p.latitude, p.longitude);
       c.moveCamera(CameraUpdate.newCenterPosition(ll));
@@ -81,9 +88,103 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     }
   }
 
+  Future<void> _initializeTracking() async {
+    try {
+      await ref.read(trackingPreferencesProvider.notifier).load();
+    } catch (_) {
+      // Missing or damaged preferences must not prevent session recovery.
+    }
+    if (!mounted) return;
+    final controller = ref.read(trackingControllerProvider.notifier);
+    await controller.restoreActiveSession();
+    await controller.loadLastKnownPosition();
+    if (!mounted) return;
+    setState(() => _isMapInitialStateReady = true);
+    // GPS can take time or fail indoors. Keep the map usable from the restored
+    // route while the current-position request continues in the background.
+    unawaited(controller.loadCurrentPosition());
+  }
+
+  Future<PhotoCaptureService> _photoService() async => PhotoCaptureService(
+    await getApplicationDocumentsDirectory(),
+    ref.read(trackingRepositoryProvider),
+  );
+
+  void _photoMessage(String message) {
+    if (mounted)
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _recoverPhotoCapture() async {
+    try {
+      final service = await _photoService();
+      final marker = await service.recover();
+      if (marker != null) _photoMessage('중단된 사진과 마커를 복구했습니다.');
+    } catch (error) {
+      _photoMessage('사진 복구 실패: $error. 원본과 복구 정보는 보존됩니다.');
+    } finally {
+      _photoBusy = false;
+      if (mounted) await _loadSavedMarkers();
+    }
+  }
+
+  Future<void> _runPhotoCapture(MapMarker marker, ImageSource source) async {
+    final service = await _photoService();
+    final usingCamera = source == ImageSource.camera;
+    if (usingCamera) await _suspendMapForCamera();
+    try {
+      final saved = await service.capture(marker, source);
+      if (saved == null) return;
+      _photoMessage('사진과 위치 정보를 저장했습니다.');
+      if (usingCamera) {
+        try {
+          final media = await service.repository.loadMedia(marker.id);
+          await Gal.putImage(media.last.filePath, album: 'SANC Tracker');
+        } catch (error) {
+          debugPrint('갤러리 저장 실패 (앱 원본 보존): $error');
+        }
+      }
+    } finally {
+      if (usingCamera && mounted) await _restoreMapAfterCamera();
+    }
+    if (mounted) {
+      try {
+        await _loadSavedMarkers();
+      } catch (error) {
+        _photoMessage('사진은 저장되었습니다. 지도 표시 실패: $error');
+      }
+    }
+  }
+
+  Future<void> _suspendMapForCamera() async {
+    // Keep one native map instance for the lifetime of the page. Recreating the
+    // Kakao platform view for every camera launch can retain EGL/GL resources.
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    if (mounted) setState(() => _isCameraActive = true);
+  }
+
+  Future<void> _restoreMapAfterCamera() async {
+    if (mounted) setState(() => _isCameraActive = false);
+  }
+
+  Future<void> _saveTrackingPreferences(TrackingPreferences value) async {
+    try {
+      await ref.read(trackingPreferencesProvider.notifier).save(value);
+    } catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('설정 저장 실패: $error')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final tracking = ref.watch(trackingControllerProvider);
+    final preferences = ref.watch(trackingPreferencesProvider);
     final p = tracking.currentPosition;
     final bottomSafeArea = MediaQuery.paddingOf(context).bottom;
     return Scaffold(
@@ -98,69 +199,132 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                       bottomSafeArea -
                       64
                 : 280,
-            child: Stack(
-              children: [
-                KakaoMap(
-                  forceHybridComposition: true,
-                  option: KakaoMapOption(
-                    position: LatLng(
-                      p?.latitude ?? 37.5665,
-                      p?.longitude ?? 126.9780,
-                    ),
-                    zoomLevel: 15,
+            child: !_isMapInitialStateReady
+                ? const Center(child: CircularProgressIndicator())
+                : Stack(
+                    children: [
+                      KakaoMap(
+                        forceHybridComposition: true,
+                        option: KakaoMapOption(
+                          position: LatLng(
+                            p?.latitude ?? 37.5665,
+                            p?.longitude ?? 126.9780,
+                          ),
+                          zoomLevel: 15,
+                        ),
+                        onMapReady: (c) {
+                          _mapController = c;
+                          if (p != null)
+                            _setCurrentLocationMarker(
+                              c,
+                              LatLng(p.latitude, p.longitude),
+                            );
+                          _restoreSavedMarkers(c);
+                          _drawRoute(tracking.route);
+                        },
+                        onTerrainLongClick: (_, position) =>
+                            _addMarker(position),
+                        onMapClick: (_, position) => _isViewingSavedRoute
+                            ? _showNearestRoutePoint(position)
+                            : _moveSelectedMarker(position),
+                      ),
+                      Positioned(
+                        right: 12,
+                        bottom: 12,
+                        child: FloatingActionButton.small(
+                          heroTag: 'move-to-current-location',
+                          tooltip: '현재 위치로 이동',
+                          onPressed: _moveToCurrentLocation,
+                          child: const Icon(Icons.my_location),
+                        ),
+                      ),
+                      Positioned(
+                        left: 12,
+                        bottom: 12,
+                        child: FloatingActionButton.small(
+                          heroTag: 'capture-current-location',
+                          tooltip: '현재 위치에서 사진 촬영',
+                          onPressed: _captureAtCurrentLocation,
+                          child: const Icon(Icons.camera_alt),
+                        ),
+                      ),
+                      Positioned(
+                        right: 12,
+                        top: 12,
+                        child: FloatingActionButton.small(
+                          heroTag: 'toggle-map-size',
+                          tooltip: _isMapExpanded ? '지도 축소' : '지도 전체화면',
+                          onPressed: () =>
+                              setState(() => _isMapExpanded = !_isMapExpanded),
+                          child: Icon(
+                            _isMapExpanded
+                                ? Icons.fullscreen_exit
+                                : Icons.fullscreen,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  onMapReady: (c) {
-                    _mapController = c;
-                    if (p != null)
-                      _setCurrentLocationMarker(
-                        c,
-                        LatLng(p.latitude, p.longitude),
-                      );
-                    _restoreSavedMarkers(c);
-                    _drawRoute(tracking.route);
-                  },
-                  onTerrainLongClick: (_, position) => _addMarker(position),
-                  onMapClick: (_, position) => _isViewingSavedRoute
-                      ? _showNearestRoutePoint(position)
-                      : _moveSelectedMarker(position),
-                ),
-                Positioned(
-                  right: 12,
-                  bottom: 12,
-                  child: FloatingActionButton.small(
-                    heroTag: 'move-to-current-location',
-                    tooltip: '현재 위치로 이동',
-                    onPressed: _moveToCurrentLocation,
-                    child: const Icon(Icons.my_location),
-                  ),
-                ),
-                Positioned(
-                  left: 12,
-                  bottom: 12,
-                  child: FloatingActionButton.small(
-                    heroTag: 'capture-current-location',
-                    tooltip: '현재 위치에서 사진 촬영',
-                    onPressed: _captureAtCurrentLocation,
-                    child: const Icon(Icons.camera_alt),
-                  ),
-                ),
-                Positioned(
-                  right: 12,
-                  top: 12,
-                  child: FloatingActionButton.small(
-                    heroTag: 'toggle-map-size',
-                    tooltip: _isMapExpanded ? '지도 축소' : '지도 전체화면',
-                    onPressed: () =>
-                        setState(() => _isMapExpanded = !_isMapExpanded),
-                    child: Icon(
-                      _isMapExpanded ? Icons.fullscreen_exit : Icons.fullscreen,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
           const SizedBox(height: 16),
+          ExpansionTile(
+            title: const Text('백그라운드 추적 설정'),
+            children: [
+              SwitchListTile(
+                title: const Text('배터리 절약 모드'),
+                subtitle: const Text('정확도를 낮춰 전력 사용을 줄입니다. 변경은 추적 중지 후 가능합니다.'),
+                value: preferences.batterySaving,
+                onChanged: tracking.isTracking
+                    ? null
+                    : (value) => _saveTrackingPreferences(
+                        TrackingPreferences(
+                          batterySaving: value,
+                          intervalSeconds: preferences.intervalSeconds,
+                        ),
+                      ),
+              ),
+              ListTile(
+                title: const Text('Android 요청 주기'),
+                subtitle: const Text(
+                  '실제 수신 간격은 OS와 GPS 상태에 따라 달라집니다. iOS는 거리 기반으로 수집합니다.',
+                ),
+                trailing: DropdownButton<int>(
+                  value: preferences.intervalSeconds,
+                  items: [10, 30, 60]
+                      .map(
+                        (seconds) => DropdownMenuItem(
+                          value: seconds,
+                          child: Text('$seconds초'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: tracking.isTracking
+                      ? null
+                      : (value) {
+                          if (value != null)
+                            _saveTrackingPreferences(
+                              TrackingPreferences(
+                                batterySaving: preferences.batterySaving,
+                                intervalSeconds: value,
+                              ),
+                            );
+                        },
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '추적을 시작하면 화면 잠금 및 다른 앱 사용 중에도 위치와 시각을 기기에 저장합니다. 중지를 누르면 기록을 종료합니다.\n\nAndroid: 정확한 위치를 허용하고 추적 알림을 확인하세요. 기록이 끊기면 앱 배터리 설정에서 제한을 해제하세요. Samsung은 절전 앱 목록, Xiaomi는 백그라운드 실행/자동 시작 설정도 확인하세요. 메뉴 이름은 기기마다 다릅니다.\n\niOS: 위치 권한과 정확한 위치를 확인하세요.\n\n강제 종료·재부팅 중에는 기록할 수 없습니다. 앱을 다시 열면 진행 중이던 세션을 재개합니다. 중단된 구간의 위치는 복원되지 않습니다.',
+                ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await Geolocator.openAppSettings();
+                },
+                child: const Text('앱 권한 설정 열기'),
+              ),
+            ],
+          ),
           ListTile(
             leading: Icon(
               tracking.isTracking ? Icons.gps_fixed : Icons.gps_off,
@@ -228,39 +392,51 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                         ],
                       ),
                     ),
-                  ...sessions
-                      .map(
-                        (session) => ListTile(
-                          selected: _selectedSessionIds.contains(session.id),
-                          leading: _isSelectingSessions
-                              ? Checkbox(
-                                  value: _selectedSessionIds.contains(
-                                    session.id,
-                                  ),
-                                  onChanged: _isDeletingSessions
-                                      ? null
-                                      : (_) =>
-                                            _toggleSessionSelection(session.id),
-                                )
-                              : const Icon(Icons.route),
-                          title: Text(session.startedAt.toLocal().toString()),
-                          subtitle: FutureBuilder<String>(
-                            future: _sessionSummary(session),
-                            builder: (context, snapshot) => Text(
-                              snapshot.data ??
-                                  '${session.status.name}\n상세 정보 계산 중...',
-                            ),
-                          ),
-                          onTap: _isDeletingSessions
-                              ? null
-                              : () => _isSelectingSessions
-                                    ? _toggleSessionSelection(session.id)
-                                    : _confirmLoadSession(session),
-                          onLongPress: _isDeletingSessions
-                              ? null
-                              : () => _toggleSessionSelection(session.id),
+                  ...sessions.map(
+                    (session) => ListTile(
+                      selected: _selectedSessionIds.contains(session.id),
+                      leading: _isSelectingSessions
+                          ? Checkbox(
+                              value: _selectedSessionIds.contains(session.id),
+                              onChanged: _isDeletingSessions
+                                  ? null
+                                  : (_) => _toggleSessionSelection(session.id),
+                            )
+                          : const Icon(Icons.route),
+                      title: Text(session.startedAt.toLocal().toString()),
+                      subtitle: FutureBuilder<String>(
+                        future: _sessionSummary(session),
+                        builder: (context, snapshot) => Text(
+                          snapshot.data ??
+                              '${session.status.name}\n상세 정보 계산 중...',
                         ),
                       ),
+                      onTap: _isDeletingSessions
+                          ? null
+                          : () => _isSelectingSessions
+                                ? _toggleSessionSelection(session.id)
+                                : _confirmLoadSession(session),
+                      onLongPress: _isDeletingSessions
+                          ? null
+                          : () => _toggleSessionSelection(session.id),
+                    ),
+                  ),
+                  if (_isCameraActive)
+                    const Positioned.fill(
+                      child: ColoredBox(
+                        color: Color(0xfff5f5f5),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.camera_alt_outlined, size: 40),
+                              SizedBox(height: 8),
+                              Text('카메라 실행 중'),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               );
             },
@@ -790,6 +966,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                               alignment: Alignment.center,
                               children: [
                                 Image.file(
+                                  cacheWidth: 768,
                                   File(
                                     item.type == MediaType.photo
                                         ? item.filePath
@@ -828,6 +1005,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: Image.file(
+                        cacheWidth: 768,
                         File(item.filePath),
                         height: 180,
                         width: 280,
@@ -849,6 +1027,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                         alignment: Alignment.center,
                         children: [
                           Image.file(
+                            cacheWidth: 768,
                             File(item.thumbnailPath ?? item.filePath),
                             height: 180,
                             width: 280,
@@ -1007,7 +1186,11 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
         child: GestureDetector(
           onTap: () => Navigator.pop(context),
           child: InteractiveViewer(
-            child: Image.file(File(path), fit: BoxFit.contain),
+            child: Image.file(
+              File(path),
+              cacheWidth: 2048,
+              fit: BoxFit.contain,
+            ),
           ),
         ),
       ),
@@ -1136,6 +1319,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
               if (mounted) _showFullScreenPhoto(item.filePath);
             },
             child: Image.file(
+              cacheWidth: 768,
               File(item.filePath),
               height: 220,
               fit: BoxFit.cover,
@@ -1253,27 +1437,14 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
   }
 
   Future<void> _pickMedia(MapMarker marker, ImageSource source) async {
-    final file = await ImagePicker().pickImage(source: source);
-    if (!mounted || file == null) return;
-    final savedPath = await _persistMediaFile(file);
-    if (!mounted || savedPath == null) return;
-    final thumbnailPath = await _persistPhotoThumbnail(savedPath);
-    final item = MediaItem(
-      id: 'media-${DateTime.now().microsecondsSinceEpoch}',
-      markerId: marker.id,
-      type: MediaType.photo,
-      filePath: savedPath,
-      thumbnailPath: thumbnailPath ?? savedPath,
-      recordedAt: DateTime.now().toUtc(),
-      latitude: marker.latitude,
-      longitude: marker.longitude,
-      locationSource: MediaLocationSource.exact,
-    );
-    if (!await _saveMediaSafely(item)) return;
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('사진과 위치 정보를 저장했습니다.')));
+    if (_photoBusy) return;
+    _photoBusy = true;
+    try {
+      await _runPhotoCapture(marker, source);
+    } catch (error) {
+      _photoMessage('사진 처리 실패: $error. 앱을 다시 열면 저장을 재시도합니다.');
+    } finally {
+      _photoBusy = false;
     }
   }
 
@@ -1354,27 +1525,6 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     }
   }
 
-  Future<String?> _persistPhotoThumbnail(String originalPath) async {
-    try {
-      final root = await getApplicationDocumentsDirectory();
-      final thumbnailDirectory = Directory(
-        '${root.path}${Platform.pathSeparator}media${Platform.pathSeparator}thumbnails',
-      );
-      await thumbnailDirectory.create(recursive: true);
-      final extension = originalPath.contains('.')
-          ? originalPath.substring(originalPath.lastIndexOf('.'))
-          : '.jpg';
-      final destination = File(
-        '${thumbnailDirectory.path}${Platform.pathSeparator}thumb-'
-        '${DateTime.now().microsecondsSinceEpoch}$extension',
-      );
-      return (await File(originalPath).copy(destination.path)).path;
-    } catch (error) {
-      debugPrint('사진 썸네일 저장 실패: $error');
-      return null;
-    }
-  }
-
   Future<void> _captureAtCurrentLocation() async {
     final type = await showModalBottomSheet<MediaType>(
       context: context,
@@ -1406,119 +1556,74 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
   }
 
   Future<void> _capturePhotoAtCurrentLocation() async {
+    if (_photoBusy) return;
     final position = ref.read(trackingControllerProvider).currentPosition;
     if (position == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('현재 위치를 아직 확인하지 못했습니다.')));
+      _photoMessage('현재 위치를 아직 확인하지 못했습니다.');
       return;
     }
-    final file = await ImagePicker().pickImage(source: ImageSource.camera);
-    if (!mounted || file == null || _mapController == null) return;
-    final savedPath = await _persistMediaFile(file);
-    if (!mounted || savedPath == null) return;
-    final thumbnailPath = await _persistPhotoThumbnail(savedPath);
-    final titleController = TextEditingController(
-      text: '사진 ${DateTime.now().toLocal().toString().substring(0, 16)}',
-    );
-    final memoController = TextEditingController();
-    final photoInfo = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('사진 메모'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleController,
-              decoration: const InputDecoration(labelText: '마커 이름'),
-            ),
-            TextField(
-              controller: memoController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '메모(선택)',
-                hintText: '사진에 대한 메모를 입력하세요',
+    _photoBusy = true;
+    try {
+      final titleController = TextEditingController(
+        text: '사진 ${DateTime.now().toLocal().toString().substring(0, 16)}',
+      );
+      final memoController = TextEditingController();
+      final photoInfo = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('사진 메모'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(labelText: '마커 이름'),
               ),
+              TextField(
+                controller: memoController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: '메모(선택)',
+                  hintText: '사진에 대한 메모를 입력하세요',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, {
+                'title': titleController.text,
+                'note': '',
+              }),
+              child: const Text('건너뛰기'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, {
+                'title': titleController.text.trim(),
+                'note': memoController.text.trim(),
+              }),
+              child: const Text('저장'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('건너뛰기'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, {
-              'title': titleController.text.trim(),
-              'note': memoController.text.trim(),
-            }),
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted) return;
-    final capturedAt = DateTime.now().toUtc();
-    final markerTitle = photoInfo?['title'];
-    if (!mounted || markerTitle == null || markerTitle.isEmpty) return;
-    final marker = MapMarker(
-      id: 'marker-${DateTime.now().microsecondsSinceEpoch}',
-      title: markerTitle,
-      latitude: position.latitude,
-      longitude: position.longitude,
-      note: photoInfo?['note']?.isEmpty == true ? null : photoInfo?['note'],
-      category: '사진',
-    );
-    final mapController = _mapController!;
-    final poi = await mapController.labelLayer.addPoi(
-      LatLng(marker.latitude, marker.longitude),
-      id: marker.id,
-      text: marker.title,
-      rank: 100,
-      style: PoiStyle(
-        icon: KImage.fromAsset('assets/icon/sanc_photo_marker.png', 48, 48),
-        textStyle: const [
-          PoiTextStyle(
-            size: 18,
-            color: Colors.black,
-            stroke: 3,
-            strokeColor: Colors.white,
-          ),
-        ],
-      ),
-    );
-    poi.onClick = () => _selectMarker(marker, poi);
-    mapController.moveCamera(
-      CameraUpdate.newCenterPosition(LatLng(marker.latitude, marker.longitude)),
-    );
-    _markerPois[marker.id] = poi;
-    _markers.add(marker);
-    _markersNotifier.value = List.unmodifiable(_markers);
-    await ref.read(trackingRepositoryProvider).saveMarker(marker);
-    final savedMedia = await _saveMediaSafely(
-      MediaItem(
-        id: 'media-${DateTime.now().microsecondsSinceEpoch}',
-        markerId: marker.id,
-        type: MediaType.photo,
-        filePath: savedPath,
-        thumbnailPath: thumbnailPath ?? savedPath,
-        recordedAt: capturedAt,
+      );
+      if (!mounted || photoInfo == null) return;
+
+      final marker = MapMarker(
+        id: 'marker-${DateTime.now().microsecondsSinceEpoch}',
+        title: photoInfo['title']?.isNotEmpty == true
+            ? photoInfo['title']!
+            : titleController.text,
         latitude: position.latitude,
         longitude: position.longitude,
-        locationSource: MediaLocationSource.exact,
-      ),
-    );
-    if (!savedMedia) return;
-    try {
-      await Gal.putImage(savedPath, album: 'SANC Tracker');
+        note: photoInfo['note'],
+        category: '사진',
+      );
+      await _runPhotoCapture(marker, ImageSource.camera);
     } catch (error) {
-      debugPrint('카메라 사진 갤러리 저장 지연: $error');
-    }
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('사진과 촬영 위치·시간을 저장했습니다.')));
+      _photoMessage('사진 처리 실패: $error. 앱을 다시 열면 저장을 재시도합니다.');
+    } finally {
+      _photoBusy = false;
     }
   }
 

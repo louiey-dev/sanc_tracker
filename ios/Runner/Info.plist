@@ -8,12 +8,20 @@
 	<string>Sanc Tracker</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>이동 경로를 기록하고 현재 위치를 지도에 표시하기 위해 위치 권한이 필요합니다.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>사진 및 동영상 마커를 촬영하기 위해 카메라를 사용합니다.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>동영상 촬영 시 소리를 녹음하기 위해 마이크를 사용합니다.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>선택한 사진과 동영상을 장소 마커에 첨부합니다.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>촬영한 사진과 동영상을 사진 보관함에도 저장합니다.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>추적을 시작하면 화면이 잠겨 있거나 앱이 백그라운드에 있을 때도 이동 경로를 기기에 저장합니다. 중지를 누르면 기록을 종료합니다.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 	</array>
-	<string>앱이 백그라운드에 있을 때도 이동 경로를 기록하기 위해 위치 권한이 필요합니다.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

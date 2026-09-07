@@ -31,7 +31,7 @@ class JsonTrackingRepository implements TrackingRepository {
 
   @override
   Future<void> saveSession(TrackingSession session) async {
-    _queue = _queue.then((_) async {
+    _queue = _queue.catchError((Object _) {}).then((_) async {
       final data = await _read();
       (data['sessions'] as List).add(session.toJson());
       await _write(data);
@@ -41,7 +41,7 @@ class JsonTrackingRepository implements TrackingRepository {
 
   @override
   Future<void> updateSession(TrackingSession session) async {
-    _queue = _queue.then((_) async {
+    _queue = _queue.catchError((Object _) {}).then((_) async {
       final data = await _read();
       final list = data['sessions'] as List;
       final index = list.indexWhere(
@@ -55,7 +55,7 @@ class JsonTrackingRepository implements TrackingRepository {
 
   @override
   Future<void> savePoint(LocationPoint point) async {
-    _queue = _queue.then((_) async {
+    _queue = _queue.catchError((Object _) {}).then((_) async {
       final data = await _read();
       (data['points'] as List).add(point.toJson());
       await _write(data);
@@ -65,7 +65,7 @@ class JsonTrackingRepository implements TrackingRepository {
 
   @override
   Future<void> deleteSession(String sessionId) async {
-    _queue = _queue.then((_) async {
+    _queue = _queue.catchError((Object _) {}).then((_) async {
       final data = await _read();
       (data['sessions'] as List).removeWhere(
         (item) => (item as Map)['id'] == sessionId,
@@ -80,7 +80,7 @@ class JsonTrackingRepository implements TrackingRepository {
 
   @override
   Future<void> saveMarker(MapMarker marker) async {
-    _queue = _queue.then((_) async {
+    _queue = _queue.catchError((Object _) {}).then((_) async {
       final data = await _read();
       final list = (data['markers'] ??= <Object?>[]) as List;
       list.add(marker.toJson());
@@ -91,7 +91,7 @@ class JsonTrackingRepository implements TrackingRepository {
 
   @override
   Future<void> updateMarker(MapMarker marker) async {
-    _queue = _queue.then((_) async {
+    _queue = _queue.catchError((Object _) {}).then((_) async {
       final data = await _read();
       final list = (data['markers'] ??= <Object?>[]) as List;
       final index = list.indexWhere((item) => (item as Map)['id'] == marker.id);
@@ -103,7 +103,7 @@ class JsonTrackingRepository implements TrackingRepository {
 
   @override
   Future<void> deleteMarker(String markerId) async {
-    _queue = _queue.then((_) async {
+    _queue = _queue.catchError((Object _) {}).then((_) async {
       final data = await _read();
       final list = (data['markers'] ??= <Object?>[]) as List;
       list.removeWhere((item) => (item as Map)['id'] == markerId);
@@ -123,7 +123,7 @@ class JsonTrackingRepository implements TrackingRepository {
 
   @override
   Future<void> saveMedia(MediaItem item) async {
-    _queue = _queue.then((_) async {
+    _queue = _queue.catchError((Object _) {}).then((_) async {
       final data = await _read();
       final list = (data['media'] ??= <Object?>[]) as List;
       list.add(item.toJson());
@@ -144,7 +144,7 @@ class JsonTrackingRepository implements TrackingRepository {
 
   @override
   Future<void> deleteMedia(String mediaId) async {
-    _queue = _queue.then((_) async {
+    _queue = _queue.catchError((Object _) {}).then((_) async {
       final data = await _read();
       final list = (data['media'] ??= <Object?>[]) as List;
       list.removeWhere((item) => (item as Map)['id'] == mediaId);

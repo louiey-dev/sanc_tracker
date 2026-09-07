@@ -23,6 +23,13 @@ flutter pub get
 flutter run -d R3CXB0P55MB --dart-define=SANC_ENV=development --dart-define=KAKAO_NATIVE_APP_KEY=516e70905f94b10af9e3b6b6942f360f
 ```
 
+```bash
+  # Release build and install. The Kakao key is required in every release build.
+  flutter build apk --release --dart-define=SANC_ENV=production --dart-define=KAKAO_NATIVE_APP_KEY=YOUR_KAKAO_NATIVE_APP_KEY
+  adb devices
+  adb install -r build\app\outputs\flutter-apk\app-release.apk
+```
+
 실제 GPS 테스트는 Android 또는 iOS 기기에서 수행합니다.
 
 ## 개발 기준
@@ -87,4 +94,5 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
   - 경로에 포인트 선택시 위치에 정보 표시
 - 2026.09.07
   - sleep mode 에서 동작이 안되는 현상 발견되어 수정
+    - 짧은 테스트로 동작 확인 함
   - 저장된 세션 리스트 삭제 시 multi remove 지원 적용

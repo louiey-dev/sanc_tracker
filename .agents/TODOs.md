@@ -76,7 +76,8 @@
 - [x] 마커 이동·수정·목록 연동
 - [x] 저장된 마커 삭제
 - [x] 저장 세션 목록 중복 제거 및 저장 마커 목록 표시
-- [x] 저장된 세션 롱프레스 삭제 및 위치 데이터 함께 삭제
+- [x] 저장된 세션 롱프레스 다중 선택·선택 취소·일괄 삭제 및 위치 데이터 함께 삭제 구현
+- [x] 저장된 세션 다중 선택·일괄 삭제 실기기 검증
 - [x] 마커 선택 후 지도 터치로 위치 이동 및 이름·좌표 표시
 - [x] 마커 단위·위젯 테스트
 
@@ -91,17 +92,56 @@
 - [x] GPS 확보 실패·저장공간 부족 처리
 - [x] 미디어 위치 연결 테스트
 - [x] 사진·동영상 마커 팝업 미리보기 및 직접 열기·재생 검증
+- [x] Android 종료 기록에서 백그라운드 LOW_MEMORY 종료 확인
+- [x] 사진 촬영 전 마커 정보 저장 및 앱 재실행 시 중단된 사진 저장 복구
+- [x] 신규 사진 마커 이름·메모 입력을 촬영 전으로 이동하여 복구 정보에 포함
+- [x] 사진 저장 재시도 중복 방지 및 지도 준비 여부와 독립적인 저장
+- [x] 사진 처리 오류 안내 및 저장 실패 시 원본·복구 정보 보존
+- [x] 실제 512px 사진 썸네일 생성 및 미리보기 디코딩 크기 제한
+- [x] 사진 복구·저장 실패 재시도·중복 방지·썸네일 크기 회귀 테스트
+- [x] iOS 카메라·마이크·사진 보관함 권한 설명 추가 및 plist 키/값 검증
+- [x] 사진 복구 수정 포함 Android debug APK 빌드
+- [x] Release native crash 원인 확인: Kakao Vector Map reflection class 제거
+- [x] Release R8 keep rule for Kakao Vector Map 추가
+- [ ] 수정 APK 실기기 설치 및 사진 마커 촬영·취소·저장 확인
+- [ ] 실기기 카메라 촬영 중 프로세스 종료 후 사진·마커 복구 검증
+- [ ] 실기기 연속 촬영·미리보기 메모리 사용 및 추적 병행 검증
+- [ ] iOS 실기기 카메라·사진 보관함 권한 및 촬영 검증
 
 ## Phase 2 — 백그라운드 안정화
 
-- [ ] Android foreground service와 백그라운드 권한
-- [ ] iOS background location capability와 권한
+구현 및 검증 범위는 [Phase 2 기록](./doc/background_tracking_20260907_1200.md)을 참조한다.
+구현·자동 검증과 실기기 검증을 분리한다. 사진 복구 테스트를 포함한 전체 자동 테스트 18개 통과 및
+Android debug APK 빌드 성공을 확인했다. 정적 분석의 기존 경고·스타일 안내는 남아 있다.
+개발 편의를 위해 debug 빌드에서는 화면 켜짐을 유지한다.
+release 빌드에서는 화면 자동 꺼짐을 허용하며 추적 중 백그라운드 수집 설정을 유지한다.
+저메모리 프로세스 종료 자체의 방지 및 종료 중 위치 수집을 보장하지 않는다.
+
+### 구현 및 자동 검증
+
+- [x] Android foreground location service·권한·CPU wake lock 설정 및 병합 manifest 확인
+- [x] iOS background location 설정·권한 설명·AppleSettings 구성 및 plist 키/값 검증
+- [x] 앱 재실행 시 기존 세션 복원·GPS 재구독 구현 및 회귀 테스트
+- [x] 권한 거부·저장 실패 시 추적 상태 및 저장된 위치 반영 회귀 테스트
+- [x] 위치 스트림 종료 시 추적 중 표시 해제 처리
+- [x] debug 빌드 화면 켜짐 유지·release 빌드 자동 꺼짐 허용 및 백그라운드 지도 카메라 갱신 생략
+- [x] 제조사별 배터리 최적화 안내
+- [x] 배터리 절약 모드·Android 수집 요청 주기 설정 및 로컬 저장 구현
+- [x] Android/iOS 위치 설정·사진 복구 포함 전체 자동 테스트 18개 통과
+- [x] Android debug APK 빌드 검증
+- [x] 스토어 위치 권한·개인정보 설명 초안 작성
+
+### 남은 구현 및 실기기 검증
+
+- [ ] 재부팅 직후 앱을 열지 않아도 추적하는 native/headless 기록기 설계·구현
+- [ ] 재부팅 후 앱 재실행 시 동일 세션으로 기록 재개 실기기 검증
+- [ ] Android 잠금·백그라운드 전환 중 foreground service 및 권한 동작 검증
+- [ ] iOS 빌드 및 실기기 백그라운드 위치 권한·수집 검증
 - [ ] 화면 잠금·백그라운드·네트워크 단절 중 위치 유실 검증
-- [ ] 재부팅·앱 재실행 후 추적 상태 복구
-- [ ] 제조사별 배터리 최적화 안내
-- [ ] 배터리 절약 모드와 수집 주기 설정
-- [ ] Android/iOS 30분 이상 실기기 안정성 측정
-- [ ] 스토어 위치 권한·개인정보 설명 준비
+- [ ] 일반·절약 모드별 Android/iOS 30분 이상 안정성·배터리 변화 측정
+- [ ] 설정 저장 후 앱 재실행 시 유지 실기기 검증
+- [ ] 스토어 제출용 개인정보처리방침 URL·운영자 정보·SDK 데이터 수집 감사 확정
+- [ ] Google Play 데이터 보안·Apple 개인정보 라벨 및 권한 시연 자료 준비
 
 ## MVP 3 — Google Drive 백업·복원
 
@@ -172,3 +212,10 @@
 - [ ] 단위·위젯·통합 테스트 통과
 - [ ] 모바일 배포 전 Android/iOS 빌드 검증
 - [ ] PC 제공 방식 확정 후 해당 Web/데스크톱 빌드·Windows/Linux 동작 검증
+- [ ] 紐⑤컮??諛고룷 ??Android/iOS 鍮뚮뱶 寃利?- [ ] PC ?쒓났 諛⑹떇 ?뺤젙 ???대떦 Web/?곗뒪?ы넲 鍮뚮뱶쨌Windows/Linux ?숈옉 寃利?
+
+### Map/GPS release verification (2026-09-07)
+- [x] Do not block map creation on a cold GPS fix; acquire fresh GPS in the background.
+- [x] Use the last-known position before falling back to the default map center.
+- [x] Use hybrid composition for the Kakao native map inside the scrollable tracking page.
+- [ ] Verify GPS outdoors with Location Services enabled; the test phone reports NO_SATELLITE/usedSv=0 indoors.
