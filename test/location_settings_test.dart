@@ -32,4 +32,12 @@ void main() {
       LocationAccuracy.medium,
     );
   });
+
+  test('default accuracy uses bestForNavigation for high precision', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    expect(
+      GeolocatorLocationService(batterySaving: false).settings.accuracy,
+      LocationAccuracy.bestForNavigation,
+    );
+  });
 }

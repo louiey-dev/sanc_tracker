@@ -48,6 +48,10 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
 
 ---
 
+## UI
+
+![Main Screen](ui_phase1.jpg)
+
 ## History
 
 - 2026.09.03
@@ -97,3 +101,4 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
     - 짧은 테스트로 동작 확인 함
   - 저장된 세션 리스트 삭제 시 multi remove 지원 적용
   - Phase2 기능 구현
+  - UI_PHASE1 적용

@@ -21,17 +21,25 @@ void main() {
     expect(restored.updatedAt, point.updatedAt);
   });
 
-  test('tracking session round trips status and timestamps', () {
+  test('tracking session round trips status, timestamps, and title', () {
     final session = TrackingSession(
       id: 'session-1',
       startedAt: DateTime.utc(2026, 1, 1),
       updatedAt: DateTime.utc(2026, 1, 2),
       status: TrackingSessionStatus.completed,
+      title: '지리산 등산',
     );
     final restored = TrackingSession.fromJson(session.toJson());
     expect(restored.id, session.id);
     expect(restored.status, TrackingSessionStatus.completed);
     expect(restored.updatedAt, session.updatedAt);
+    expect(restored.title, '지리산 등산');
+
+    final updated = session.copyWith(title: '설악산 코스');
+    expect(updated.title, '설악산 코스');
+
+    final cleared = updated.copyWith(clearTitle: true);
+    expect(cleared.title, isNull);
   });
 
   test('location filter accepts first point and rejects points within 50m', () {

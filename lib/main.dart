@@ -5,7 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 import 'core/app_config.dart';
 import 'core/app_logger.dart';
-import 'tracking/presentation/tracking_page.dart';
+import 'core/theme/app_theme.dart';
+import 'tracking/presentation/main_navigation_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,8 +44,8 @@ class SancTrackerApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'SANC Tracker',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
-    home: initializeSdk ? _SdkBootstrap(config: config) : const TrackingPage(),
+    theme: AppTheme.lightTheme,
+    home: initializeSdk ? _SdkBootstrap(config: config) : const MainNavigationPage(),
   );
 }
 
@@ -84,7 +85,7 @@ class _SdkBootstrapState extends State<_SdkBootstrap> {
       if (snapshot.connectionState != ConnectionState.done) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
-      return const TrackingPage();
+      return const MainNavigationPage();
     },
   );
 }

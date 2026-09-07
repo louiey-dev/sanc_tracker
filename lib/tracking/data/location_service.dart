@@ -32,7 +32,7 @@ class GeolocatorLocationService implements LocationService {
   @override
   Future<Position> getCurrentPosition() => Geolocator.getCurrentPosition(
     locationSettings: const LocationSettings(
-      accuracy: LocationAccuracy.high,
+      accuracy: LocationAccuracy.bestForNavigation,
       timeLimit: Duration(seconds: 15),
     ),
   );
@@ -44,7 +44,7 @@ class GeolocatorLocationService implements LocationService {
   LocationSettings get settings {
     final accuracy = batterySaving
         ? LocationAccuracy.medium
-        : LocationAccuracy.high;
+        : LocationAccuracy.bestForNavigation;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
         accuracy: accuracy,
@@ -70,6 +70,6 @@ class GeolocatorLocationService implements LocationService {
         showBackgroundLocationIndicator: true,
       );
     }
-    return LocationSettings(accuracy: accuracy, distanceFilter: 50);
+    return LocationSettings(accuracy: accuracy, distanceFilter: 20);
   }
 }

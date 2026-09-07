@@ -49,7 +49,7 @@
 - [x] 화면의 GPS 플러그인 직접 호출을 위치 서비스 인터페이스로 이동
 - [x] 카카오맵 지도 및 현재 위치 표시
 - [x] 임시 20m 거리 필터를 50m 또는 최대 30초의 도메인 수집 정책으로 교체
-- [ ] 정지 상태 수집 주기 완화
+- [x] 정지 상태 수집 주기 완화 및 드리프트 억제
 - [x] 저정확도·권한 거부·위치 서비스 중지 처리
 - [x] 위치 기록을 로컬 저장소에 기록
 - [x] 날짜별 세션 목록과 이동 경로 표시
@@ -219,3 +219,50 @@ release 빌드에서는 화면 자동 꺼짐을 허용하며 추적 중 백그�
 - [x] Use the last-known position before falling back to the default map center.
 - [x] Use hybrid composition for the Kakao native map inside the scrollable tracking page.
 - [ ] Verify GPS outdoors with Location Services enabled; the test phone reports NO_SATELLITE/usedSv=0 indoors.
+
+### UI/UX 전면 개편 및 모듈화 구조 (2026-09-07)
+
+- [x] 산림 테마(Forest Teal `#0F766E`, Safety Amber `#F59E0B`, Live Tracking Emerald `#10B981`) 및 Material 3 테마 시스템 구현
+- [x] 단일 1,750줄 `TrackingPage` 해체 및 4탭 하단 네비게이션(`추적`, `기록`, `마커`, `설정`) 모듈 분리
+- [x] `IndexedStack` 적용을 통한 탭 전환 시 카카오맵 OpenGL/EGL 플랫폼 뷰 컨텍스트 영구 보존
+- [x] 풀 캔버스 인터랙티브 지도 및 실시간 상태 플로팅 HUD 카드(시간/거리/속도/수집 개수/토글 버튼) 구현
+- [x] 마커 상세 모달 바텀 시트(`MarkerDetailSheet`: 사진/동영상 뷰어 및 촬영·수정·이동·삭제) 분리
+- [x] 세션 목록 화면(`HistoryScreen`) 및 다중 선택 일괄 삭제 구현
+- [x] 마커 목록 화면(`MarkersScreen`) 및 카테고리 필터 칩 구현
+- [x] 설정 화면(`SettingsScreen`) 및 배터리 절약 모드·GPS 주기 설정 분리
+- [x] 전체 자동 테스트 18개 및 위젯 네비게이션 테스트 통과, flutter analyze 0건 유지
+- [x] 마커 추가/수정/사진 메모 다이얼로그의 컨트롤러 조기 해제로 인한 팝 애니메이션 중 크래시(빨간 화면) 수정 (`MarkerInputDialog`, `PhotoMemoDialog`, `VideoPlayerDialog` 분리 및 생명주기 관리)
+- [x] 신규 마커/사진 다이얼로그 회귀 방지 테스트 작성 및 전체 22개 테스트 통과, 실기기 APK 설치 검증
+
+### UI/UX Phase 2 아키텍처 및 상태 동기화 개선 (2026-09-07)
+
+- [x] IndexedStack 탭 간 데이터 자동 갱신: Riverpod `sessionsListProvider` 및 `markersListProvider` 도입, 탭 전환 및 삭제/추가/수정 시 실시간 동기화
+- [x] 카카오맵 마커 삭제 동기화 및 고스트 마커 방지: `_syncMapMarkers()` 구현으로 전체 마커 삭제 시 즉시 메모리 및 카카오맵 네이티브 POI 제거
+- [x] 저장된 세션 경로 상태 격리: `TrackingState` 내 `route`(실시간)와 `savedRoute`(조회용) 완전 분리, 과거 경로 조회/종료 시 실시간 추적 경로 보존
+- [x] 설정 화면 가독성 개선: 제조사별 백그라운드 최적화 안내(기본 Android, Samsung, Xiaomi, 자동 복구)를 `ExpansionTile` 아코디언으로 분리
+- [x] 지도 시각적 명확성 및 범례 오버레이: 좌측 하단 확장형 `MapLegendChip` 구현(현재 위치, 실시간 추적선, 저장 경로, 장소 마커, 사진 마커)
+- [x] 자동화 테스트 4개 추가 (`saved_route_isolation_test.dart`, `map_legend_chip_test.dart`, `marker_sync_deletion_test.dart`, `settings_accordion_test.dart`), 총 29개 테스트 통과 및 `flutter analyze` 0건 검증 완료
+- [x] '기록' 탭 세션 이름 수정 기능 추가: `TrackingSession` 모델에 `title` 필드 및 직렬화/`copyWith` 추가, `SessionTitleDialog` 신설, `SessionCard` 수정 버튼 및 이름/일시 구분 표시 연동, 회귀 테스트 추가 (`test/session_title_edit_test.dart`), 총 32개 테스트 통과
+
+### GPS 오차 및 궤적 개선 (2026-09-07)
+
+- [x] GPS 수신 모드 최고 정밀도 상향: `LocationAccuracy.bestForNavigation` 적용 (Android Fused Location Provider 최고 정밀도 모드 및 iOS 내비게이션 전용 센서 융합)
+- [x] 다단계 도메인 위치 필터(`LocationFilter`) 고도화:
+  - 정확도 게이트: 시작 지점 >35m, 이동 중 >25m 불량 신호 필터링
+  - 정지 상태 드리프트 억제: 8m 이내 미세 떨림 수집 억제(휴식 중 가짜 이동 거리 누적 원천 차단)
+  - 반사파 스파이크 기각: 순간 이동 속도 >30 m/s (108 km/h) 기각
+  - 등산로 곡선 복원력: 최소 이동 거리 20m로 완화하여 지그재그 코스 보존
+- [x] 2D 칼만 필터(`GpsKalmanFilter`) 구현: GPS 측정 오차 분산과 보행 동특성($q = 3.0\text{ m/s}$)을 융합하여 튀는 신호 감쇠 및 궤적 스무딩
+- [x] `TrackingController` 연동: 세션 시작/복구/종료 시 필터 생명주기 관리, 보정 좌표 DB 저장 및 이동 거리 누적, 0.5 m/s 이하 속도 정지 표시
+- [x] 자동화 테스트 13개 추가/갱신 (`gps_accuracy_filter_test.dart`, `location_settings_test.dart`), 총 45개 전체 테스트 통과 및 `flutter analyze` 0건 검증
+
+### UI/UX 정밀 고도화 및 사용성 개선 (2026-09-07)
+
+- [x] 지도 화면 가시성 극대화: `TrackingHudCard` 초기 상태 접힘(`initiallyCollapsed: true`) 기본화로 지도 면적 85%+ 확보, 탭 시 3열 메트릭 부드러운 확장
+- [x] 추적 전 준비 상태 단계별 안내: GPS 수신 대기, 신호 안정화, 준비 완료(오차 반경 표시) 단계별 안내 바 구현
+- [x] 기록 세션 카드 시각화: 줄글 텍스트에서 거리(`km`), 시간(`시간/분`), 위치 수(`개`) 시각적 칩 그리드 및 상태 뱃지(`완료`/`기록 중`)로 전면 개편
+- [x] 마커 화면 미디어 썸네일: 사진/동영상 마커에 실제 로컬 썸네일 이미지(44x44) 및 미디어 뱃지(카메라/비디오 아이콘) 표시
+- [x] 설정 화면 컴팩트화: 중복 문구 제거 및 단일 아코디언 카드로 통합하여 핵심 설정 접근성 대폭 개선
+- [x] 저장 경로 상태 명시: 하단 `NavigationBar` '추적'/'기록' 탭 뱃지 및 지도 상단 전용 플로팅 배너(`[저장 경로 보기 중 | 보기 종료]`) 연동
+- [x] 자동화 테스트 4개 추가/갱신 (`tracking_hud_card_test.dart`, `session_card_metrics_test.dart`, `markers_screen_thumbnail_test.dart`), 총 49개 전체 테스트 통과 및 `flutter analyze` 0건 검증
+
