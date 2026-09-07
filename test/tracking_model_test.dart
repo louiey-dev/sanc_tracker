@@ -62,5 +62,19 @@ void main() {
     );
     expect(filter.shouldRecord(null, first), isTrue);
     expect(filter.shouldRecord(first, near), isFalse);
+
+    final nearAfter30s = Position(
+      latitude: 37.5001,
+      longitude: 127,
+      timestamp: DateTime.utc(2026).add(const Duration(seconds: 30)),
+      accuracy: 5,
+      altitude: 0,
+      altitudeAccuracy: 1,
+      heading: 0,
+      headingAccuracy: 1,
+      speed: 0,
+      speedAccuracy: 1,
+    );
+    expect(filter.shouldRecord(first, nearAfter30s), isTrue);
   });
 }

@@ -14,13 +14,14 @@ class JsonTrackingRepository implements TrackingRepository {
   );
   Future<Map<String, dynamic>> _read() async {
     final file = await _file;
-    if (!await file.exists())
+    if (!await file.exists()) {
       return {
         'sessions': <Object?>[],
         'points': <Object?>[],
         'markers': <Object?>[],
         'media': <Object?>[],
       };
+    }
     return jsonDecode(await file.readAsString()) as Map<String, dynamic>;
   }
 

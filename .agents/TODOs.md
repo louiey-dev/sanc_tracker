@@ -212,9 +212,9 @@ release 빌드에서는 화면 자동 꺼짐을 허용하며 추적 중 백그�
 - [ ] 단위·위젯·통합 테스트 통과
 - [ ] 모바일 배포 전 Android/iOS 빌드 검증
 - [ ] PC 제공 방식 확정 후 해당 Web/데스크톱 빌드·Windows/Linux 동작 검증
-- [ ] 紐⑤컮??諛고룷 ??Android/iOS 鍮뚮뱶 寃利?- [ ] PC ?쒓났 諛⑹떇 ?뺤젙 ???대떦 Web/?곗뒪?ы넲 鍮뚮뱶쨌Windows/Linux ?숈옉 寃利?
 
 ### Map/GPS release verification (2026-09-07)
+
 - [x] Do not block map creation on a cold GPS fix; acquire fresh GPS in the background.
 - [x] Use the last-known position before falling back to the default map center.
 - [x] Use hybrid composition for the Kakao native map inside the scrollable tracking page.

@@ -13,7 +13,6 @@ import 'tracking_controller.dart';
 import '../data/tracking_preferences.dart';
 import '../domain/location_point.dart';
 import '../../map/map_marker.dart';
-import '../domain/tracking_repository.dart';
 import '../domain/tracking_session.dart';
 import '../../media/media_item.dart';
 import '../../media/photo_capture_service.dart';
@@ -66,9 +65,12 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     ref.listenManual(trackingControllerProvider, (previous, next) {
       final p = next.currentPosition;
       final c = _mapController;
-      if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed)
+      if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
         return;
-      if (p == null || c == null) return;
+      }
+      if (p == null || c == null) {
+        return;
+      }
       final ll = LatLng(p.latitude, p.longitude);
       c.moveCamera(CameraUpdate.newCenterPosition(ll));
       _setCurrentLocationMarker(c, ll);
@@ -77,7 +79,9 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed || !mounted) return;
+    if (state != AppLifecycleState.resumed || !mounted) {
+      return;
+    }
     final controller = _mapController;
     final position = ref.read(trackingControllerProvider).currentPosition;
     if (controller != null && position != null) {
@@ -94,11 +98,15 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     } catch (_) {
       // Missing or damaged preferences must not prevent session recovery.
     }
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     final controller = ref.read(trackingControllerProvider.notifier);
     await controller.restoreActiveSession();
     await controller.loadLastKnownPosition();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() => _isMapInitialStateReady = true);
     // GPS can take time or fail indoors. Keep the map usable from the restored
     // route while the current-position request continues in the background.
@@ -111,10 +119,11 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
   );
 
   void _photoMessage(String message) {
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   Future<void> _recoverPhotoCapture() async {
@@ -174,10 +183,11 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     try {
       await ref.read(trackingPreferencesProvider.notifier).save(value);
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('설정 저장 실패: $error')));
+      }
     }
   }
 
@@ -214,11 +224,12 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                         ),
                         onMapReady: (c) {
                           _mapController = c;
-                          if (p != null)
+                          if (p != null) {
                             _setCurrentLocationMarker(
                               c,
                               LatLng(p.latitude, p.longitude),
                             );
+                          }
                           _restoreSavedMarkers(c);
                           _drawRoute(tracking.route);
                         },
@@ -228,6 +239,22 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                             ? _showNearestRoutePoint(position)
                             : _moveSelectedMarker(position),
                       ),
+                      if (_isCameraActive)
+                        const Positioned.fill(
+                          child: ColoredBox(
+                            color: Color(0xfff5f5f5),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.camera_alt_outlined, size: 40),
+                                  SizedBox(height: 8),
+                                  Text('카메라 실행 중'),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       Positioned(
                         right: 12,
                         bottom: 12,
@@ -301,13 +328,14 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                   onChanged: tracking.isTracking
                       ? null
                       : (value) {
-                          if (value != null)
+                          if (value != null) {
                             _saveTrackingPreferences(
                               TrackingPreferences(
                                 batterySaving: preferences.batterySaving,
                                 intervalSeconds: value,
                               ),
                             );
+                          }
                         },
                 ),
               ),
@@ -351,9 +379,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
           FutureBuilder(
             future: ref.read(trackingRepositoryProvider).loadSessions(),
             builder: (context, snapshot) {
-              final sessions = snapshot.data;
-              if (sessions == null || sessions.isEmpty)
-                return const SizedBox.shrink();
+              final sessions = snapshot.data ?? const <TrackingSession>[];
               return ExpansionTile(
                 leading: const Icon(Icons.route),
                 title: const Text('저장된 세션'),
@@ -365,7 +391,17 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                       )
                     : null,
                 children: [
-                  if (_isSelectingSessions)
+                  if (!snapshot.hasData)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: CircularProgressIndicator(),
+                    ),
+                  if (snapshot.hasData && sessions.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('저장된 세션 없음'),
+                    ),
+                  if (_isSelectingSessions && sessions.isNotEmpty)
                     ListTile(
                       title: Text('${_selectedSessionIds.length}개 선택됨'),
                       trailing: Row(
@@ -392,51 +428,48 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                         ],
                       ),
                     ),
-                  ...sessions.map(
-                    (session) => ListTile(
-                      selected: _selectedSessionIds.contains(session.id),
-                      leading: _isSelectingSessions
-                          ? Checkbox(
-                              value: _selectedSessionIds.contains(session.id),
-                              onChanged: _isDeletingSessions
-                                  ? null
-                                  : (_) => _toggleSessionSelection(session.id),
-                            )
-                          : const Icon(Icons.route),
-                      title: Text(session.startedAt.toLocal().toString()),
-                      subtitle: FutureBuilder<String>(
-                        future: _sessionSummary(session),
-                        builder: (context, snapshot) => Text(
-                          snapshot.data ??
-                              '${session.status.name}\n상세 정보 계산 중...',
+                  ...sessions.asMap().entries.map(
+                    (entry) => Column(
+                      children: [
+                        if (entry.key > 0) const Divider(height: 1),
+                        ListTile(
+                          selected: _selectedSessionIds.contains(
+                            entry.value.id,
+                          ),
+                          leading: _isSelectingSessions
+                              ? Checkbox(
+                                  value: _selectedSessionIds.contains(
+                                    entry.value.id,
+                                  ),
+                                  onChanged: _isDeletingSessions
+                                      ? null
+                                      : (_) => _toggleSessionSelection(
+                                          entry.value.id,
+                                        ),
+                                )
+                              : const Icon(Icons.route),
+                          title: Text(
+                            entry.value.startedAt.toLocal().toString(),
+                          ),
+                          subtitle: FutureBuilder<String>(
+                            future: _sessionSummary(entry.value),
+                            builder: (context, snapshot) => Text(
+                              snapshot.data ??
+                                  '${entry.value.status.name}\n상세 정보 계산 중...',
+                            ),
+                          ),
+                          onTap: _isDeletingSessions
+                              ? null
+                              : () => _isSelectingSessions
+                                    ? _toggleSessionSelection(entry.value.id)
+                                    : _confirmLoadSession(entry.value),
+                          onLongPress: _isDeletingSessions
+                              ? null
+                              : () => _toggleSessionSelection(entry.value.id),
                         ),
-                      ),
-                      onTap: _isDeletingSessions
-                          ? null
-                          : () => _isSelectingSessions
-                                ? _toggleSessionSelection(session.id)
-                                : _confirmLoadSession(session),
-                      onLongPress: _isDeletingSessions
-                          ? null
-                          : () => _toggleSessionSelection(session.id),
+                      ],
                     ),
                   ),
-                  if (_isCameraActive)
-                    const Positioned.fill(
-                      child: ColoredBox(
-                        color: Color(0xfff5f5f5),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.camera_alt_outlined, size: 40),
-                              SizedBox(height: 8),
-                              Text('카메라 실행 중'),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
                 ],
               );
             },
@@ -456,17 +489,26 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                     );
                   }
                   return Column(
-                    children: markers
+                    children: markers.asMap().entries
                         .map(
-                          (marker) => ListTile(
-                            leading: const Icon(Icons.place, color: Colors.red),
-                            title: Text(marker.title),
-                            subtitle: Text(
-                              '${marker.latitude.toStringAsFixed(6)}, '
-                              '${marker.longitude.toStringAsFixed(6)}',
-                            ),
-                            onTap: () => _focusMarker(marker),
-                            onLongPress: () => _deleteMarkerFromList(marker),
+                          (entry) => Column(
+                            children: [
+                              if (entry.key > 0) const Divider(height: 1),
+                              ListTile(
+                                leading: const Icon(
+                                  Icons.place,
+                                  color: Colors.red,
+                                ),
+                                title: Text(entry.value.title),
+                                subtitle: Text(
+                                  '${entry.value.latitude.toStringAsFixed(6)}, '
+                                  '${entry.value.longitude.toStringAsFixed(6)}',
+                                ),
+                                onTap: () => _focusMarker(entry.value),
+                                onLongPress: () =>
+                                    _deleteMarkerFromList(entry.value),
+                              ),
+                            ],
                           ),
                         )
                         .toList(),
@@ -526,7 +568,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
       builder: (context) => AlertDialog(
         title: const Text('경로 기록 위치'),
         content: Text(
-          '기록 시각: ${point.timestamp?.toLocal() ?? '-'}\n'
+          '기록 시각: ${point.timestamp.toLocal()}\n'
           '위도: ${point.latitude.toStringAsFixed(6)}\n'
           '경도: ${point.longitude.toStringAsFixed(6)}\n'
           '정확도: ${point.accuracy.toStringAsFixed(1)} m\n'
@@ -576,7 +618,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     final hours = seconds ~/ 3600;
     final minutes = (seconds % 3600) ~/ 60;
     final secs = seconds % 60;
-    return hours > 0 ? '${hours}시간 ${minutes}분' : '${minutes}분 ${secs}초';
+    return hours > 0 ? '$hours시간 $minutes분' : '$minutes분 $secs초';
   }
 
   String _formatDateTime(DateTime value) {
@@ -693,47 +735,55 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     final titleController = TextEditingController(text: '장소 마커');
     final noteController = TextEditingController();
     final categoryController = TextEditingController();
-    final result = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('장소 마커 추가'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleController,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: '제목'),
+    Map<String, String>? result;
+    try {
+      result = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('장소 마커 추가'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: '제목'),
+              ),
+              TextField(
+                controller: noteController,
+                decoration: const InputDecoration(labelText: '메모(선택)'),
+              ),
+              TextField(
+                controller: categoryController,
+                decoration: const InputDecoration(labelText: '분류(선택)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('취소'),
             ),
-            TextField(
-              controller: noteController,
-              decoration: const InputDecoration(labelText: '메모(선택)'),
-            ),
-            TextField(
-              controller: categoryController,
-              decoration: const InputDecoration(labelText: '분류(선택)'),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, {
+                'title': titleController.text.trim(),
+                'note': noteController.text.trim(),
+                'category': categoryController.text.trim(),
+              }),
+              child: const Text('저장'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, {
-              'title': titleController.text.trim(),
-              'note': noteController.text.trim(),
-              'category': categoryController.text.trim(),
-            }),
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      titleController.dispose();
+      noteController.dispose();
+      categoryController.dispose();
+    }
     final title = result?['title'];
-    if (!mounted || title == null || title.isEmpty || _mapController == null)
+    if (!mounted || title == null || title.isEmpty || _mapController == null) {
       return;
+    }
     final marker = MapMarker(
       id: 'marker-${DateTime.now().microsecondsSinceEpoch}',
       title: title,
@@ -970,7 +1020,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                                   File(
                                     item.type == MediaType.photo
                                         ? item.filePath
-                                        : (item.thumbnailPath ?? item.filePath),
+                                        : item.thumbnailPath,
                                   ),
                                   width: 120,
                                   height: 120,
@@ -1028,7 +1078,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                         children: [
                           Image.file(
                             cacheWidth: 768,
-                            File(item.thumbnailPath ?? item.filePath),
+                            File(item.thumbnailPath),
                             height: 180,
                             width: 280,
                             fit: BoxFit.cover,
@@ -1197,47 +1247,6 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     );
   }
 
-  Future<void> _showMediaChoice(MapMarker marker, List<MediaItem> media) async {
-    final selected = await showModalBottomSheet<MediaItem>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.all(16),
-          children: media.map((item) {
-            final isPhoto = item.type == MediaType.photo;
-            return ListTile(
-              leading: Icon(isPhoto ? Icons.photo : Icons.videocam),
-              title: Text(isPhoto ? '사진 보기' : '동영상 재생'),
-              subtitle: Text(item.recordedAt.toLocal().toString()),
-              onTap: () => Navigator.pop(context, item),
-            );
-          }).toList(),
-        ),
-      ),
-    );
-    if (!mounted || selected == null) return;
-    if (selected.type == MediaType.photo) {
-      final updated = MapMarker(
-        id: marker.id,
-        title: marker.title,
-        latitude: marker.latitude,
-        longitude: marker.longitude,
-        note: marker.note,
-        category: marker.category,
-        preferredMediaId: selected.id,
-      );
-      final index = _markers.indexWhere((item) => item.id == marker.id);
-      if (index >= 0) _markers[index] = updated;
-      _markersNotifier.value = List.unmodifiable(_markers);
-      await ref.read(trackingRepositoryProvider).updateMarker(updated);
-      if (mounted) _showFullScreenPhoto(selected.filePath);
-    } else {
-      await _playVideo(selected.filePath);
-    }
-  }
-
   Future<void> _openMedia(MediaItem item, MapMarker marker) async {
     if (item.type == MediaType.video) {
       await _playVideo(item.filePath);
@@ -1259,91 +1268,13 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     if (mounted) _showFullScreenPhoto(item.filePath);
   }
 
-  Future<void> _showMarkerPhotos(MapMarker marker) async {
-    final media = await ref
-        .read(trackingRepositoryProvider)
-        .loadMedia(marker.id);
-    if (!mounted) return;
-    if (media.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('이 마커에 연결된 사진이 없습니다.')));
-      return;
-    }
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          shrinkWrap: true,
-          children: media
-              .where((item) => File(item.filePath).existsSync())
-              .map((item) => _buildMediaEntry(item, marker))
-              .toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMediaEntry(MediaItem item, MapMarker marker) {
-    if (item.type == MediaType.video) {
-      return ListTile(
-        leading: const Icon(Icons.play_circle),
-        title: const Text('동영상'),
-        onTap: () => _playVideo(item.filePath),
-        trailing: TextButton(
-          onPressed: () => _deleteMedia(item),
-          child: const Text('연결 해제'),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        children: [
-          GestureDetector(
-            onTap: () async {
-              final updated = MapMarker(
-                id: marker.id,
-                title: marker.title,
-                latitude: marker.latitude,
-                longitude: marker.longitude,
-                note: marker.note,
-                category: marker.category,
-                preferredMediaId: item.id,
-              );
-              final index = _markers.indexWhere((m) => m.id == marker.id);
-              if (index >= 0) _markers[index] = updated;
-              _markersNotifier.value = List.unmodifiable(_markers);
-              await ref.read(trackingRepositoryProvider).updateMarker(updated);
-              if (mounted) _showFullScreenPhoto(item.filePath);
-            },
-            child: Image.file(
-              cacheWidth: 768,
-              File(item.filePath),
-              height: 220,
-              fit: BoxFit.cover,
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () => _deleteMedia(item),
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('사진 제거'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _playVideo(String path) async {
     final controller = VideoPlayerController.file(File(path));
     try {
       await controller.initialize();
       if (!mounted) return;
       await controller.play();
+      if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (context) => Dialog(
@@ -1365,58 +1296,56 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     }
   }
 
-  Future<void> _deleteMedia(MediaItem item) async {
-    await ref.read(trackingRepositoryProvider).deleteMedia(item.id);
-    if (!mounted) return;
-    Navigator.pop(context);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('사진을 제거했습니다.')));
-  }
-
   Future<void> _editMarker(MapMarker marker, Poi poi) async {
     final titleController = TextEditingController(text: marker.title);
     final noteController = TextEditingController(text: marker.note ?? '');
     final categoryController = TextEditingController(
       text: marker.category ?? '',
     );
-    final result = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('마커 수정'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleController,
-              decoration: const InputDecoration(labelText: '이름'),
+    Map<String, String>? result;
+    try {
+      result = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('마커 수정'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(labelText: '이름'),
+              ),
+              TextField(
+                controller: noteController,
+                decoration: const InputDecoration(labelText: '메모'),
+              ),
+              TextField(
+                controller: categoryController,
+                decoration: const InputDecoration(labelText: '분류'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('취소'),
             ),
-            TextField(
-              controller: noteController,
-              decoration: const InputDecoration(labelText: '메모'),
-            ),
-            TextField(
-              controller: categoryController,
-              decoration: const InputDecoration(labelText: '분류'),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, {
+                'title': titleController.text.trim(),
+                'note': noteController.text.trim(),
+                'category': categoryController.text.trim(),
+              }),
+              child: const Text('저장'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, {
-              'title': titleController.text.trim(),
-              'note': noteController.text.trim(),
-              'category': categoryController.text.trim(),
-            }),
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      titleController.dispose();
+      noteController.dispose();
+      categoryController.dispose();
+    }
     final title = result?['title'];
     if (!mounted || title == null || title.isEmpty) return;
     final updated = MapMarker(
@@ -1564,56 +1493,61 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     }
     _photoBusy = true;
     try {
-      final titleController = TextEditingController(
-        text: '사진 ${DateTime.now().toLocal().toString().substring(0, 16)}',
-      );
+      final defaultTitle =
+          '사진 ${DateTime.now().toLocal().toString().substring(0, 16)}';
+      final titleController = TextEditingController(text: defaultTitle);
       final memoController = TextEditingController();
-      final photoInfo = await showDialog<Map<String, String>>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('사진 메모'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleController,
-                decoration: const InputDecoration(labelText: '마커 이름'),
-              ),
-              TextField(
-                controller: memoController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: '메모(선택)',
-                  hintText: '사진에 대한 메모를 입력하세요',
+      Map<String, String>? photoInfo;
+      try {
+        photoInfo = await showDialog<Map<String, String>>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('사진 메모'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleController,
+                  decoration: const InputDecoration(labelText: '마커 이름'),
                 ),
+                TextField(
+                  controller: memoController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: '메모(선택)',
+                    hintText: '사진에 대한 메모를 입력하세요',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, {
+                  'title': titleController.text,
+                  'note': '',
+                }),
+                child: const Text('건너뛰기'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, {
+                  'title': titleController.text.trim(),
+                  'note': memoController.text.trim(),
+                }),
+                child: const Text('저장'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, {
-                'title': titleController.text,
-                'note': '',
-              }),
-              child: const Text('건너뛰기'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, {
-                'title': titleController.text.trim(),
-                'note': memoController.text.trim(),
-              }),
-              child: const Text('저장'),
-            ),
-          ],
-        ),
-      );
+        );
+      } finally {
+        titleController.dispose();
+        memoController.dispose();
+      }
       if (!mounted || photoInfo == null) return;
 
+      final title = photoInfo['title'];
       final marker = MapMarker(
         id: 'marker-${DateTime.now().microsecondsSinceEpoch}',
-        title: photoInfo['title']?.isNotEmpty == true
-            ? photoInfo['title']!
-            : titleController.text,
+        title: title?.isNotEmpty == true ? title! : defaultTitle,
         latitude: position.latitude,
         longitude: position.longitude,
         note: photoInfo['note'],

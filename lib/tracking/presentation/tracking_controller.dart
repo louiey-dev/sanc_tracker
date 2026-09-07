@@ -5,6 +5,7 @@ import '../data/location_service.dart';
 import '../data/tracking_preferences.dart';
 import '../domain/tracking_state.dart';
 import '../domain/location_point.dart';
+import '../domain/location_filter.dart';
 import '../domain/tracking_repository.dart';
 import '../domain/tracking_session.dart';
 import '../data/json_tracking_repository.dart';
@@ -23,6 +24,7 @@ final trackingControllerProvider =
     NotifierProvider<TrackingController, TrackingState>(TrackingController.new);
 
 class TrackingController extends Notifier<TrackingState> {
+  final LocationFilter _filter = const LocationFilter();
   StreamSubscription<Position>? _subscription;
   TrackingSession? _session;
   bool _busy = false;
@@ -94,8 +96,9 @@ class TrackingController extends Notifier<TrackingState> {
     if (!await service.isServiceEnabled()) return;
     final permission = await service.requestPermissionIfNeeded();
     if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever)
+        permission == LocationPermission.deniedForever) {
       return;
+    }
     try {
       final position = await service.getCurrentPosition();
       state = state.copyWith(currentPosition: position);
@@ -109,7 +112,9 @@ class TrackingController extends Notifier<TrackingState> {
     if (!await service.isServiceEnabled()) return;
     final permission = await service.requestPermissionIfNeeded();
     if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) return;
+        permission == LocationPermission.deniedForever) {
+      return;
+    }
     final position = await service.getLastKnownPosition();
     if (position != null) state = state.copyWith(currentPosition: position);
   }
@@ -208,33 +213,44 @@ class TrackingController extends Notifier<TrackingState> {
     state = state.copyWith(isTracking: true);
     _subscription = service
         .positionStream()
-        .asyncMap((position) async {
-          await ref
-              .read(trackingRepositoryProvider)
-              .savePoint(
-                LocationPoint(
-                  id: _newId(),
-                  sessionId: session.id,
-                  latitude: position.latitude,
-                  longitude: position.longitude,
-                  recordedAt: position.timestamp,
-                  updatedAt: DateTime.now().toUtc(),
-                  accuracyM: position.accuracy,
-                  altitudeM: position.altitude,
-                  speedMps: position.speed,
-                  headingDeg: position.heading,
-                ),
-              );
-          return position;
-        })
         .listen(
-          (position) {
+          (position) async {
+            final previous = state.route.isEmpty ? null : state.route.last;
+            final shouldRecord = _filter.shouldRecord(previous, position);
+            if (shouldRecord) {
+              try {
+                await ref
+                    .read(trackingRepositoryProvider)
+                    .savePoint(
+                      LocationPoint(
+                        id: _newId(),
+                        sessionId: session.id,
+                        latitude: position.latitude,
+                        longitude: position.longitude,
+                        recordedAt: position.timestamp,
+                        updatedAt: DateTime.now().toUtc(),
+                        accuracyM: position.accuracy,
+                        altitudeM: position.altitude,
+                        speedMps: position.speed,
+                        headingDeg: position.heading,
+                      ),
+                    );
+              } catch (error) {
+                state = state.copyWith(
+                  isTracking: false,
+                  message: '위치 수집/저장 중단: $error. 시작을 눌러 재시도하세요.',
+                );
+                await _subscription?.cancel();
+                _subscription = null;
+                return;
+              }
+            }
             final accuracyMessage = position.accuracy > 100
                 ? 'GPS 정확도가 낮습니다(±${position.accuracy.toStringAsFixed(0)}m).'
                 : null;
             state = state.copyWith(
               currentPosition: position,
-              route: [...state.route, position],
+              route: shouldRecord ? [...state.route, position] : state.route,
               message: accuracyMessage,
               clearMessage: accuracyMessage == null,
             );
@@ -244,11 +260,12 @@ class TrackingController extends Notifier<TrackingState> {
             message: '위치 수집/저장 중단: $error. 시작을 눌러 재시도하세요.',
           ),
           onDone: () {
-            if (state.isTracking)
+            if (state.isTracking) {
               state = state.copyWith(
                 isTracking: false,
                 message: '위치 수집이 종료되었습니다. 시작을 눌러 재개하세요.',
               );
+            }
           },
           cancelOnError: true,
         );

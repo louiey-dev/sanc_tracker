@@ -17,12 +17,17 @@ class FakeLocation implements LocationService {
   @override
   Future<LocationPermission> requestPermissionIfNeeded() async => permission;
   @override
+  Future<Position?> getLastKnownPosition() async => null;
+  @override
   Future<Position> getCurrentPosition() => throw UnimplementedError();
   @override
   Stream<Position> positionStream() {
     subscriptions++;
     return stream.stream;
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class FakeRepository implements TrackingRepository {
