@@ -36,6 +36,9 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
   bool _isMarkerMoveMode = false;
   bool _isMarkerSheetOpen = false;
   bool _isViewingSavedRoute = false;
+  bool _isSelectingSessions = false;
+  bool _isDeletingSessions = false;
+  final Set<String> _selectedSessionIds = {};
   final List<MapMarker> _markers = [];
   final Map<String, Poi> _markerPois = {};
   late final ValueNotifier<List<MapMarker>> _markersNotifier;
@@ -197,23 +200,68 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                         onPressed: _exitSavedRoute,
                       )
                     : null,
-                children: sessions
-                    .map(
-                      (session) => ListTile(
-                        leading: const Icon(Icons.route),
-                        title: Text(session.startedAt.toLocal().toString()),
-                        subtitle: FutureBuilder<String>(
-                          future: _sessionSummary(session),
-                          builder: (context, snapshot) => Text(
-                            snapshot.data ??
-                                '${session.status.name}\n상세 정보 계산 중...',
+                children: [
+                  if (_isSelectingSessions)
+                    ListTile(
+                      title: Text('${_selectedSessionIds.length}개 선택됨'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextButton(
+                            onPressed: _isDeletingSessions
+                                ? null
+                                : () => setState(() {
+                                    _isSelectingSessions = false;
+                                    _selectedSessionIds.clear();
+                                  }),
+                            child: const Text('취소'),
                           ),
-                        ),
-                        onTap: () => _confirmLoadSession(session),
-                        onLongPress: () => _deleteSession(session),
+                          IconButton(
+                            tooltip: '선택한 세션 삭제',
+                            onPressed:
+                                _isDeletingSessions ||
+                                    _selectedSessionIds.isEmpty
+                                ? null
+                                : _deleteSelectedSessions,
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        ],
                       ),
-                    )
-                    .toList(),
+                    ),
+                  ...sessions
+                      .map(
+                        (session) => ListTile(
+                          selected: _selectedSessionIds.contains(session.id),
+                          leading: _isSelectingSessions
+                              ? Checkbox(
+                                  value: _selectedSessionIds.contains(
+                                    session.id,
+                                  ),
+                                  onChanged: _isDeletingSessions
+                                      ? null
+                                      : (_) =>
+                                            _toggleSessionSelection(session.id),
+                                )
+                              : const Icon(Icons.route),
+                          title: Text(session.startedAt.toLocal().toString()),
+                          subtitle: FutureBuilder<String>(
+                            future: _sessionSummary(session),
+                            builder: (context, snapshot) => Text(
+                              snapshot.data ??
+                                  '${session.status.name}\n상세 정보 계산 중...',
+                            ),
+                          ),
+                          onTap: _isDeletingSessions
+                              ? null
+                              : () => _isSelectingSessions
+                                    ? _toggleSessionSelection(session.id)
+                                    : _confirmLoadSession(session),
+                          onLongPress: _isDeletingSessions
+                              ? null
+                              : () => _toggleSessionSelection(session.id),
+                        ),
+                      ),
+                ],
               );
             },
           ),
@@ -411,31 +459,55 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     }
   }
 
-  Future<void> _deleteSession(TrackingSession session) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('세션 삭제'),
-        content: const Text('이 세션과 저장된 위치 데이터를 삭제하시겠습니까?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    await ref.read(trackingRepositoryProvider).deleteSession(session.id);
-    if (mounted) {
-      setState(() {});
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('세션과 위치 데이터가 삭제되었습니다.')));
+  void _toggleSessionSelection(String id) {
+    setState(() {
+      _isSelectingSessions = true;
+      if (!_selectedSessionIds.add(id)) _selectedSessionIds.remove(id);
+    });
+  }
+
+  Future<void> _deleteSelectedSessions() async {
+    final ids = _selectedSessionIds.toList();
+    if (ids.isEmpty || _isDeletingSessions) return;
+    setState(() => _isDeletingSessions = true);
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('세션 삭제'),
+          content: Text('선택한 ${ids.length}개 세션과 저장된 위치 데이터를 삭제하시겠습니까?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('삭제'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      final repository = ref.read(trackingRepositoryProvider);
+      for (final id in ids) {
+        await repository.deleteSession(id);
+        _selectedSessionIds.remove(id);
+      }
+      if (mounted) {
+        setState(() => _isSelectingSessions = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${ids.length}개 세션과 위치 데이터가 삭제되었습니다.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('세션 삭제 중 오류가 발생했습니다: $error')));
+      }
+    } finally {
+      if (mounted) setState(() => _isDeletingSessions = false);
     }
   }
 

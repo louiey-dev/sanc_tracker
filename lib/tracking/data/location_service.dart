@@ -15,6 +15,8 @@ class GeolocatorLocationService implements LocationService {
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied)
       permission = await Geolocator.requestPermission();
+    // Some platforms grant foreground access first and expose the background
+    // access choice on a subsequent permission request.
     if (permission == LocationPermission.whileInUse)
       permission = await Geolocator.requestPermission();
     return permission;

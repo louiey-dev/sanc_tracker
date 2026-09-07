@@ -85,3 +85,6 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
   - 총 소요 시간
   - 이동 거리
   - 경로에 포인트 선택시 위치에 정보 표시
+- 2026.09.07
+  - sleep mode 에서 동작이 안되는 현상 발견되어 수정
+  - 저장된 세션 리스트 삭제 시 multi remove 지원 적용
