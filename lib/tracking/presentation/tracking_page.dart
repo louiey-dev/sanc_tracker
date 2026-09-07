@@ -139,13 +139,13 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     }
   }
 
-  Future<void> _runPhotoCapture(MapMarker marker, ImageSource source) async {
+  Future<bool> _runPhotoCapture(MapMarker marker, ImageSource source) async {
     final service = await _photoService();
     final usingCamera = source == ImageSource.camera;
     if (usingCamera) await _suspendMapForCamera();
     try {
       final saved = await service.capture(marker, source);
-      if (saved == null) return;
+      if (saved == null) return false;
       _photoMessage('사진과 위치 정보를 저장했습니다.');
       if (usingCamera) {
         try {
@@ -165,6 +165,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
         _photoMessage('사진은 저장되었습니다. 지도 표시 실패: $error');
       }
     }
+    return true;
   }
 
   Future<void> _suspendMapForCamera() async {
@@ -271,7 +272,7 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                         child: FloatingActionButton.small(
                           heroTag: 'capture-current-location',
                           tooltip: '현재 위치에서 사진 촬영',
-                          onPressed: _captureAtCurrentLocation,
+                          onPressed: _capturePhotoAtCurrentLocation,
                           child: const Icon(Icons.camera_alt),
                         ),
                       ),
@@ -489,7 +490,9 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
                     );
                   }
                   return Column(
-                    children: markers.asMap().entries
+                    children: markers
+                        .asMap()
+                        .entries
                         .map(
                           (entry) => Column(
                             children: [
@@ -1454,6 +1457,8 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     }
   }
 
+  // Kept for the existing video-selection entry point used by older flows.
+  // ignore: unused_element
   Future<void> _captureAtCurrentLocation() async {
     final type = await showModalBottomSheet<MediaType>(
       context: context,
@@ -1495,6 +1500,19 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
     try {
       final defaultTitle =
           '사진 ${DateTime.now().toLocal().toString().substring(0, 16)}';
+      final marker = MapMarker(
+        id: 'marker-${DateTime.now().microsecondsSinceEpoch}',
+        title: defaultTitle,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        note: null,
+        category: '사진',
+      );
+      final captured = await _runPhotoCapture(marker, ImageSource.camera);
+      if (!captured) return;
+
+      // Open metadata input only after the camera has completed successfully.
+      if (!mounted) return;
       final titleController = TextEditingController(text: defaultTitle);
       final memoController = TextEditingController();
       Map<String, String>? photoInfo;
@@ -1522,10 +1540,8 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context, {
-                  'title': titleController.text,
-                  'note': '',
-                }),
+                onPressed: () =>
+                    Navigator.pop(context, {'title': defaultTitle, 'note': ''}),
                 child: const Text('건너뛰기'),
               ),
               FilledButton(
@@ -1543,17 +1559,22 @@ class _TrackingPageState extends ConsumerState<TrackingPage>
         memoController.dispose();
       }
       if (!mounted || photoInfo == null) return;
-
-      final title = photoInfo['title'];
-      final marker = MapMarker(
-        id: 'marker-${DateTime.now().microsecondsSinceEpoch}',
-        title: title?.isNotEmpty == true ? title! : defaultTitle,
-        latitude: position.latitude,
-        longitude: position.longitude,
-        note: photoInfo['note'],
-        category: '사진',
+      final updated = MapMarker(
+        id: marker.id,
+        title: photoInfo['title']?.isNotEmpty == true
+            ? photoInfo['title']!
+            : defaultTitle,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+        note: photoInfo['note']?.isNotEmpty == true ? photoInfo['note'] : null,
+        category: marker.category,
       );
-      await _runPhotoCapture(marker, ImageSource.camera);
+      final index = _markers.indexWhere((item) => item.id == marker.id);
+      if (index >= 0) _markers[index] = updated;
+      _markersNotifier.value = List.unmodifiable(_markers);
+      await ref.read(trackingRepositoryProvider).updateMarker(updated);
+      final poi = _markerPois[marker.id];
+      if (poi != null) await poi.changeText(updated.title);
     } catch (error) {
       _photoMessage('사진 처리 실패: $error. 앱을 다시 열면 저장을 재시도합니다.');
     } finally {

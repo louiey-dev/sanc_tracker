@@ -96,3 +96,4 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
   - sleep mode 에서 동작이 안되는 현상 발견되어 수정
     - 짧은 테스트로 동작 확인 함
   - 저장된 세션 리스트 삭제 시 multi remove 지원 적용
+  - Phase2 기능 구현

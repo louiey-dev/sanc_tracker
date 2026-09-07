@@ -1,0 +1,103 @@
+# ============================================================
+# .aiderignore for Flutter Projects
+# 목적: Aider가 읽지 않아도 되는 파일을 제외해 토큰 절감
+# ============================================================
+
+
+# ── 빌드 산출물 ─────────────────────────────────────────────
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+
+# ── 코드 자동생성 파일 (가장 큰 토큰 낭비 주범) ────────────
+# json_serializable, freezed, injectable, retrofit 등
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+*.gr.dart
+*.config.dart
+lib/generated/
+
+
+# ── 플랫폼별 네이티브 코드 ──────────────────────────────────
+# (Flutter/Dart 로직과 무관한 경우 제외)
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework/
+ios/Flutter/Flutter.podspec
+android/.gradle/
+android/app/build/
+android/local.properties
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
+linux/flutter/generated_plugin_registrant.cc
+linux/flutter/generated_plugin_registrant.h
+linux/flutter/generated_plugins.cmake
+macos/Flutter/GeneratedPluginRegistrant.swift
+macos/Pods/
+web/favicon.png
+web/icons/
+
+
+# ── 의존성 / 패키지 ─────────────────────────────────────────
+.pub-cache/
+.pub/
+pubspec.lock          # 버전 고정 파일 (수정 불필요)
+
+
+# ── 에셋 바이너리 ───────────────────────────────────────────
+assets/images/
+assets/fonts/
+assets/videos/
+assets/icons/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.ttf
+*.otf
+*.woff
+*.woff2
+*.mp4
+*.mp3
+*.wav
+
+
+# ── 테스트 목업 / 골든 파일 ─────────────────────────────────
+test/golden/
+**/*.golden
+
+
+# ── IDE / OS 메타데이터 ─────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+
+# ── 환경 / 시크릿 ───────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+google-services.json
+GoogleService-Info.plist
+
+
+# ── 로그 / 커버리지 ─────────────────────────────────────────
+*.log
+coverage/
+lcov.info
+
+
+# ── l10n 자동생성 (수동 편집 파일만 유지) ───────────────────
+# lib/l10n/*.arb 는 유지, 생성된 dart 파일만 제외
+lib/l10n/app_localizations*.dart
