@@ -102,3 +102,5 @@ Repository: [sanc_tracker](https://github.com/louiey-dev/sanc_tracker.git)
   - 저장된 세션 리스트 삭제 시 multi remove 지원 적용
   - Phase2 기능 구현
   - UI_PHASE1 적용
+- 2026.09.14
+  - 내보내기와 가져오기 기능 추가

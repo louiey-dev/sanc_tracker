@@ -1,0 +1,15 @@
+{
+  "commands": [
+    {
+      "text": "Run Debug",
+      "tooltip": "flutter run on phone",
+      "color": "#FFCC00",
+      "command": "workbench.action.terminal.sendSequence",
+      "arguments": [
+        {
+          "text": "flutter run -d R3CXB0P55MB --dart-define=SANC_ENV=development --dart-define=KAKAO_NATIVE_APP_KEY=f55dc1925aa320a11a555036b3d248da\n"
+        }
+      ]
+    }
+  ]
+}

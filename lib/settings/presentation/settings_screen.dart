@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../../core/app_config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../tracking/data/tracking_preferences.dart';
 import '../../tracking/presentation/tracking_controller.dart';
+
+final appVersionProvider = FutureProvider<String>((ref) async {
+  try {
+    final info = await PackageInfo.fromPlatform();
+    if (info.version.isNotEmpty) {
+      return info.version;
+    }
+  } catch (_) {}
+  return AppConfig.defaultAppVersion;
+});
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -375,13 +387,23 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
-          const Center(
-            child: Text(
-              'SANC Tracker v1.0.0',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textMuted,
-              ),
+          Center(
+            child: Consumer(
+              builder: (context, ref, _) {
+                final versionAsync = ref.watch(appVersionProvider);
+                final versionStr = versionAsync.when(
+                  data: (v) => v,
+                  loading: () => AppConfig.defaultAppVersion,
+                  error: (_, __) => AppConfig.defaultAppVersion,
+                );
+                return Text(
+                  'SANC Tracker v$versionStr',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 16),

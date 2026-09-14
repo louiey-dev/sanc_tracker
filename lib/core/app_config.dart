@@ -10,6 +10,8 @@ class AppConfig {
     this.kakaoWebAppKey = '',
   });
 
+  static const String defaultAppVersion = '0.1.1';
+
   final AppEnvironment environment;
   final bool enableLogging;
   final String kakaoNativeAppKey;

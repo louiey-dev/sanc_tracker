@@ -32,6 +32,7 @@ class SessionCard extends StatelessWidget {
     required this.onLongPress,
     required this.onSelectChanged,
     this.onEditTitle,
+    this.onExport,
   });
 
   final TrackingSession session;
@@ -43,6 +44,7 @@ class SessionCard extends StatelessWidget {
   final VoidCallback onLongPress;
   final ValueChanged<bool?> onSelectChanged;
   final VoidCallback? onEditTitle;
+  final VoidCallback? onExport;
 
   String _formatDate(DateTime dt) {
     final local = dt.toLocal();
@@ -91,12 +93,16 @@ class SessionCard extends StatelessWidget {
             color: isPrimary ? AppColors.primary : AppColors.textSecondary,
           ),
           const SizedBox(width: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: isPrimary ? FontWeight.w700 : FontWeight.w600,
-              color: isPrimary ? AppColors.primary : AppColors.textPrimary,
+          Flexible(
+            child: Text(
+              value,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isPrimary ? FontWeight.w700 : FontWeight.w600,
+                color: isPrimary ? AppColors.primary : AppColors.textPrimary,
+              ),
             ),
           ),
         ],
@@ -113,7 +119,10 @@ class SessionCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 6),
-        Row(
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -149,7 +158,6 @@ class SessionCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
             Text(
               '${_formatTime(data.start)} ~ ${_formatTime(data.end)}',
               style: const TextStyle(
@@ -205,7 +213,7 @@ class SessionCard extends StatelessWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -215,22 +223,22 @@ class SessionCard extends StatelessWidget {
                   activeColor: AppColors.primary,
                   onChanged: onSelectChanged,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
               ] else ...[
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 38,
+                  height: 38,
                   decoration: BoxDecoration(
                     color: AppColors.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
                     Icons.route_rounded,
                     color: AppColors.primary,
-                    size: 24,
+                    size: 20,
                   ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 10),
               ],
               Expanded(
                 child: Column(
@@ -240,6 +248,8 @@ class SessionCard extends StatelessWidget {
                       hasCustomTitle
                           ? session.title!
                           : _formatDate(session.startedAt),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
@@ -250,6 +260,8 @@ class SessionCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         _formatDate(session.startedAt),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
@@ -294,18 +306,35 @@ class SessionCard extends StatelessWidget {
                 ),
               ),
               if (!isSelecting) ...[
+                if (onExport != null)
+                  IconButton(
+                    tooltip: '내보내기 / 공유',
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    padding: const EdgeInsets.all(4),
+                    icon: const Icon(
+                      Icons.share_outlined,
+                      size: 18,
+                      color: AppColors.textMuted,
+                    ),
+                    onPressed: onExport,
+                  ),
                 if (onEditTitle != null)
                   IconButton(
                     tooltip: '이름 수정',
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    padding: const EdgeInsets.all(4),
                     icon: const Icon(
                       Icons.edit_outlined,
-                      size: 20,
+                      size: 18,
                       color: AppColors.textMuted,
                     ),
                     onPressed: onEditTitle,
                   ),
                 const Icon(
                   Icons.chevron_right_rounded,
+                  size: 18,
                   color: AppColors.textMuted,
                 ),
               ],

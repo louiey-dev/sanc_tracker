@@ -143,21 +143,26 @@ release 빌드에서는 화면 자동 꺼짐을 허용하며 추적 중 백그�
 - [ ] 스토어 제출용 개인정보처리방침 URL·운영자 정보·SDK 데이터 수집 감사 확정
 - [ ] Google Play 데이터 보안·Apple 개인정보 라벨 및 권한 시연 자료 준비
 
-## MVP 3 — Google Drive 백업·복원
+## MVP 3 — 백업·복원 및 Import/Export
 
-### Import/Export
+구현 및 검증 범위는 [범용 포맷 내보내기/가져오기 계획](./doc/universal_export_import_plan_20260914_1131.md)을 참조한다.
+
+### 범용 포맷(GPX·GeoJSON) 내보내기/가져오기 및 공유
+
+- [x] GPX (v1.1) 직렬화 및 역직렬화 (세션 경로·마커 매핑) 구현 및 단위 테스트
+- [x] GeoJSON (RFC 7946) 직렬화 및 역직렬화 구현 및 단위 테스트
+- [x] 파일 선택(Import) 및 공유 시트(Export) 연동 서비스 구현
+- [x] 가져오기 시 요약 미리보기 다이얼로그 및 기존 데이터 안전 보존 병합
+- [x] History 화면 내보내기/공유 및 가져오기 UI 연동
+- [x] 범용 포맷 단위·위젯 회귀 테스트
+
+### 전용 포맷 및 Google Drive 백업·복원 (후속)
 
 - [ ] `formatVersion`·`schemaVersion` 포함 앱 전용 기록 JSON 정의
 - [ ] 기록 백업과 미디어 포함 전체 백업의 필수 항목·누락 표시 구현
-- [ ] GeoJSON·GPX의 경로/좌표 마커 전용 범위 정의
-- [ ] JSON·GeoJSON·GPX Export
-- [ ] Import 파일 선택·미리보기·유효성 검증
-- [ ] 기존 데이터 보존형 Import
-- [ ] `clientEventId`·콘텐츠 해시 기반 중복 탐지
 - [ ] 미디어 원본·썸네일 포함 여부 선택
 - [ ] 미디어 ID·상대 경로 기반 패키지 생성과 복원 경로 재생성
 - [ ] 지원하지 않는/악성 파일 차단
-- [ ] Import/Export 테스트
 
 ### Google Drive 백업·복원
 
@@ -265,4 +270,3 @@ release 빌드에서는 화면 자동 꺼짐을 허용하며 추적 중 백그�
 - [x] 설정 화면 컴팩트화: 중복 문구 제거 및 단일 아코디언 카드로 통합하여 핵심 설정 접근성 대폭 개선
 - [x] 저장 경로 상태 명시: 하단 `NavigationBar` '추적'/'기록' 탭 뱃지 및 지도 상단 전용 플로팅 배너(`[저장 경로 보기 중 | 보기 종료]`) 연동
 - [x] 자동화 테스트 4개 추가/갱신 (`tracking_hud_card_test.dart`, `session_card_metrics_test.dart`, `markers_screen_thumbnail_test.dart`), 총 49개 전체 테스트 통과 및 `flutter analyze` 0건 검증
-
